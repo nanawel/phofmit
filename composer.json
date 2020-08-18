@@ -1,12 +1,16 @@
 {
     "type": "project",
+    "name": "nanawel/phofmit",
+    "description": "Phofmit: PHP Offline Folder MIrroring Tool",
     "license": "proprietary",
     "require": {
         "php": "^7.2.5",
         "ext-ctype": "*",
         "ext-iconv": "*",
+        "ext-json": "*",
         "symfony/console": "5.1.*",
         "symfony/dotenv": "5.1.*",
+        "symfony/finder": "5.1.*",
         "symfony/flex": "^1.3.1",
         "symfony/framework-bundle": "5.1.*",
         "symfony/yaml": "5.1.*"
@@ -41,13 +45,9 @@
     },
     "scripts": {
         "auto-scripts": {
-            "cache:clear": "symfony-cmd",
-            "assets:install %PUBLIC_DIR%": "symfony-cmd"
+            "cache:clear": "symfony-cmd"
         },
-        "post-install-cmd": [
-            "@auto-scripts"
-        ],
-        "post-update-cmd": [
+        "post-autoload-dump": [
             "@auto-scripts"
         ]
     },
