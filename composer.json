@@ -18,6 +18,9 @@
     "require-dev": {
     },
     "config": {
+        "platform": {
+            "php": "7.2.33"
+        },
         "optimize-autoloader": true,
         "preferred-install": {
             "*": "dist"
