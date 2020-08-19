@@ -77,9 +77,6 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         if (!is_file($referenceSnapshotFilename) || !is_readable($referenceSnapshotFilename)) {
             throw new \InvalidArgumentException('Invalid snapshot path: ' . $referenceSnapshotFilename);
         }
-        if (!is_dir($path = $input->getArgument('path'))) {
-            throw new \InvalidArgumentException('Invalid path: ' . $path);
-        }
 
         $options = $this->readOptions($input);
 
@@ -93,7 +90,6 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         }
 
         $logOutput->writeln("<info>🛈 Using snapshot file at $referenceSnapshotFilename.</info>");
-        $logOutput->writeln("<info>🛈 Target folder is at $path...</info>");
 
         $startTime = microtime(true);
         if ($options['dry-run']) {
@@ -104,14 +100,24 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         if ($targetSnapshotFilename = $input->getOption('target-snapshot')) {
             $logOutput->writeln(sprintf('<info>🛈 Loading target snapshot from %s</info>', $targetSnapshotFilename));
             $targetSnapshot = $this->loadSnapshot($targetSnapshotFilename);
+
+            if (!is_dir($targetSnapshot['base-path'])) {
+                throw new \InvalidArgumentException('The base path from snapshot does not exist: ' . $path);
+            }
+            $logOutput->writeln("<info>🛈 Target folder is at {$targetSnapshot['base-path']}...</info>");
+
             $logOutput->writeln(sprintf(
                 '<info>🛈 %d file(s) found in target snapshot.</info>',
                 count($targetSnapshot['files'])
             ));
         } else {
-            if (!$input->getArgument('path')) {
+            if (!$path = $input->getArgument('path')) {
                 throw new \InvalidArgumentException('You must specify a path if no --target-snapshot is given.');
             }
+            if (!is_dir($path)) {
+                throw new \InvalidArgumentException('Invalid path: ' . $path);
+            }
+            $logOutput->writeln("<info>🛈 Target folder is at $path...</info>");
 
             // Use scanner config from reference snapshot to get comparable results
             $options['scanner-config'] = $referenceSnapshot['scanner-config'];
