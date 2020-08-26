@@ -129,7 +129,12 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         $logOutput->writeln(
             '<info>⏳ Searching for matching files with reference snapshot (this might take a while)...</info>'
         );
-        $diff = $this->mirror->diffSnapshots($referenceSnapshot, $targetSnapshot, $diffScannerConfig);
+        $diff = $this->mirror->diffSnapshots(
+            $referenceSnapshot,
+            $targetSnapshot,
+            $diffScannerConfig,
+            $logOutput
+        );
 
         $logOutput->writeln(sprintf('🛈 %d target file(s) found with matching reference:', count($diff)));
 

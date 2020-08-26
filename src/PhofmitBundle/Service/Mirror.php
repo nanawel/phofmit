@@ -142,7 +142,12 @@ class Mirror
      * @param array $scannerConfig
      * @return array
      */
-    public function diffSnapshots(array $reference, array $target, array $scannerConfig) {
+    public function diffSnapshots(
+        array $reference,
+        array $target,
+        array $scannerConfig,
+        OutputInterface $output
+    ) {
         $matches = [];
 
         $referenceIndex = [];
@@ -162,8 +167,17 @@ class Mirror
             }
         }
 
+        $pb = new ProgressBar($output, 0, 0.5);
+        $pb->setFormat('%current% [%bar%] %message%');
+        $pb->setMessage('Starting...');
+        $pb->setMaxSteps(count($target['files']));
+        $pb->start();
+
         foreach ($target['files'] as $fileData) {
             $file = File::fromArray($fileData);
+
+            $pb->setMessage($file->getPath());
+            $pb->advance();
 
             $lookupArrays = [];
             if ($scannerConfig['use-size']) {
@@ -220,6 +234,8 @@ class Mirror
                 ];
             }
         }
+        $pb->setMessage('Finished.');
+        $pb->finish();
 
         return $matches;
     }
