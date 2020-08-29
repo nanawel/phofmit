@@ -144,9 +144,36 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             }
             $logIo->writeln("<info>🛈 Target folder is at: $path</info>");
 
-            // Use scanner config from reference snapshot to get comparable results
-            $options['scanner-config'] = $referenceSnapshot['scanner-config'];
-            $targetSnapshot = $this->mirrorService->snapshot($path, $logIo, $options);
+            $targetSnapshotCacheFilename = $this->getTargetSnapshotCacheFilename(
+                $path,
+                $referenceSnapshot['scanner-config']
+            );
+
+            $runSnapshot = true;
+            if (is_file($targetSnapshotCacheFilename) && is_readable($targetSnapshotCacheFilename)) {
+                try {
+                    $targetSnapshot = $this->loadSnapshot($targetSnapshotCacheFilename);
+
+                    $question = sprintf(
+                        '❓ A snapshot from a previous run on the same folder created on %s has been found. '
+                        . 'Do you want to use it instead of scanning the folder again?',
+                        $targetSnapshot['date']
+                    );
+                    if (strtolower(trim($io->ask($question, 'n'))) == 'y') {
+                        $runSnapshot = false;
+                    }
+                } catch (\Throwable $e) {
+                    // just ignore
+                }
+            }
+
+            if ($runSnapshot) {
+                // Use scanner config from reference snapshot to get comparable results
+                $options['scanner-config'] = $referenceSnapshot['scanner-config'];
+                $targetSnapshot = $this->mirrorService->snapshot($path, $logIo, $options);
+
+                @file_put_contents($targetSnapshotCacheFilename, json_encode($targetSnapshot, JSON_PRETTY_PRINT));
+            }
         }
 
         $diffScannerConfig = $this->mirrorService->getScannerConfig($options);
@@ -433,5 +460,19 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         }
 
         return false;
+    }
+
+    /**
+     * @param string $path
+     * @param array $scannerConfig
+     * @return string
+     */
+    protected function getTargetSnapshotCacheFilename(string $path, array $scannerConfig) {
+        $hash = sha1(json_encode([
+            'path' => $path,
+            'scanner-config' => $scannerConfig
+        ]));
+
+        return sprintf('%s%s%s.phofmit.json', sys_get_temp_dir(), DIRECTORY_SEPARATOR, $hash);
     }
 }
