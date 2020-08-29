@@ -3,9 +3,10 @@
 namespace App\PhofmitBundle\Service;
 
 
+use App\PhofmitBundle\Helper\FileChecksum;
 use App\PhofmitBundle\Model\File;
 use Symfony\Component\Console\Helper\ProgressBar;
-use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo;
 
@@ -15,6 +16,15 @@ class Mirror
     const CHECKSUM_DEFAULT_CHUNK_SIZE = 512 * 1024;
     const CHECKSUM_DEFAULT_ALGO       = 'sha1';
 
+    /** @var \App\PhofmitBundle\Helper\FileChecksum */
+    protected $fileChecksumHelper;
+
+    public function __construct(
+        FileChecksum $fileChecksumHelper
+    ) {
+        $this->fileChecksumHelper = $fileChecksumHelper;
+    }
+
     /**
      * @param string $path
      * @param array $options
@@ -22,7 +32,7 @@ class Mirror
      */
     public function snapshot(
         string $path,
-        OutputInterface $output,
+        SymfonyStyle $io,
         array $options = []
     ): array {
         $scannerConfig = $this->getScannerConfig($options);
@@ -41,7 +51,7 @@ class Mirror
             $finder->depth($options['depth']);
         }
 
-        $pb = new ProgressBar($output, 0, 0.5);
+        $pb = new ProgressBar($io, 0, 0.5);
         $pb->setFormat('%current% [%bar%] %message%');
         $pb->setMessage('Starting...');
         $pb->start();
@@ -62,9 +72,9 @@ class Mirror
             $files[] = $this->scanFile($splFile, $scannerConfig)->toArray();
             $pb->advance();
         }
-        $pb->setMessage(sprintf('<info>🛈 %d file(s) have been analyzed.', count($files)));
+        $pb->setMessage(sprintf('<info>🛈 %d file(s) have been analyzed.</info>', count($files)));
         $pb->finish();
-        $output->writeln('');
+        $io->newLine();
 
         return [
             'version'        => self::VERSION,
@@ -146,7 +156,7 @@ class Mirror
         array $reference,
         array $target,
         array $scannerConfig,
-        OutputInterface $output
+        SymfonyStyle $io
     ) {
         $matches = [];
 
@@ -167,7 +177,7 @@ class Mirror
             }
         }
 
-        $pb = new ProgressBar($output, 0, 0.5);
+        $pb = new ProgressBar($io, 0, 0.5);
         $pb->setFormat('%current% [%bar%] %message%');
         $pb->setMessage('Starting...');
         $pb->setMaxSteps(count($target['files']));
@@ -199,7 +209,7 @@ class Mirror
             $matchingFiles = call_user_func_array('array_uintersect', $uintersectArgs);
 
             if (count($matchingFiles) > 1) {
-                // TODO Report ignored file
+                $io->warning(sprintf('Multiple matching files returned for %s, ignoring.', $file->getPath()));
             } elseif ($matchingFiles) {
                 $referenceFile = current($matchingFiles);
                 $matches[] = [
@@ -207,35 +217,24 @@ class Mirror
                         'path'  => $referenceFile->getPath(),
                         'size'  => $referenceFile->getSize(),
                         'mtime' => $referenceFile->getMtime(),
-                        'checksum-summary' => implode(',', array_map(function(array $checksum) {
-                            return sprintf(
-                                '[%s:%d:%d:%s]',
-                                $checksum['algo'],
-                                $checksum['start'],
-                                $checksum['actual-length'],
-                                $checksum['value']
-                            );
-                        }, $referenceFile->getChecksums())),
+                        'checksum-summary' => $this->fileChecksumHelper->getPrintableSummary(
+                            $referenceFile->getChecksums()
+                        ),
                     ],
                     'target' => [
                         'path'     => $file->getPath(),
                         'size'     => $file->getSize(),
                         'mtime'    => $file->getMtime(),
-                        'checksum-summary' => implode(',', array_map(function(array $checksum) {
-                            return sprintf(
-                                '[%s:%d:%d:%s]',
-                                $checksum['algo'],
-                                $checksum['start'],
-                                $checksum['actual-length'],
-                                $checksum['value']
-                            );
-                        }, $file->getChecksums())),
+                        'checksum-summary' => $this->fileChecksumHelper->getPrintableSummary(
+                            $file->getChecksums()
+                        ),
                     ]
                 ];
             }
         }
         $pb->setMessage('Finished.');
         $pb->finish();
+        $io->newLine();
 
         return $matches;
     }

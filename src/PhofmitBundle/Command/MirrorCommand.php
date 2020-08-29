@@ -1,27 +1,26 @@
 <?php
 namespace App\PhofmitBundle\Command;
 
-use App\IQSocketControlBundle\Connector\IQSocket;
 use App\PhofmitBundle\Helper\DateTime;
 use App\PhofmitBundle\Service\Mirror;
-use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
 
 
 class MirrorCommand extends \Symfony\Component\Console\Command\Command
 {
     /** @var Mirror */
-    protected $mirror;
+    protected $mirrorService;
 
     public function __construct(
-        string $name = null,
-        Mirror $mirror
+        Mirror $mirrorService,
+        string $name = null
     ) {
         parent::__construct($name);
-        $this->mirror = $mirror;
+        $this->mirrorService = $mirrorService;
     }
 
     protected function configure()
@@ -71,42 +70,68 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             );
     }
 
+    /**
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @return int
+     * @throws \Exception
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        $io = new SymfonyStyle($input, $output);
+        /** @var SymfonyStyle $logIo */
+        $logIo = $io->getErrorStyle();
+        $logIo->setDecorated(true);
+        $shellIo = $io;
+
         $referenceSnapshotFilename = $input->getArgument('snapshot-filename');
         if (!is_file($referenceSnapshotFilename) || !is_readable($referenceSnapshotFilename)) {
-            throw new \InvalidArgumentException('Invalid snapshot path: ' . $referenceSnapshotFilename);
+            $logIo->error('Invalid snapshot path: ' . $referenceSnapshotFilename);
+
+            return self::FAILURE;
         }
+        $referenceSnapshotFilename = realpath($referenceSnapshotFilename);
 
         $options = $this->readOptions($input);
 
-        // If shell output is requested, use STDOUT for shell commands and print all logs on STDERR
         if ($options['shell-mode']) {
-            /** @var OutputInterface $logOutput */
-            $logOutput = $output->getErrorOutput();
-            $shellOutput = $output;
-        } else {
-            $logOutput = $shellOutput = $output;
+            $logIo->note('Using shell output.');
         }
 
-        $logOutput->writeln("<info>🛈 Using snapshot file at $referenceSnapshotFilename.</info>");
+        $logIo->writeln("<info>🛈 Using snapshot file at: $referenceSnapshotFilename</info>");
 
         $startTime = microtime(true);
         if ($options['dry-run']) {
-            $logOutput->writeln('<fg=blue>✋ DRY-RUN ENABLED.</>');
+            $logIo->note('DRY-RUN ENABLED.');
         }
 
-        $referenceSnapshot = $this->loadSnapshot($referenceSnapshotFilename);
+        if ($options['dry-run'] && $options['shell-mode']) {
+            $logIo->error('Shell output and dry-mode are mutually exclusive.');
+
+            return self::FAILURE;
+        }
+
+        try {
+            $referenceSnapshot = $this->loadSnapshot($referenceSnapshotFilename);
+        }
+        catch (\Throwable $e) {
+            $io->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
         if ($targetSnapshotFilename = $input->getOption('target-snapshot')) {
-            $logOutput->writeln(sprintf('<info>🛈 Loading target snapshot from %s</info>', $targetSnapshotFilename));
+            $logIo->writeln(sprintf('<info>🛈 Loading target snapshot from: %s</info>', $targetSnapshotFilename));
             $targetSnapshot = $this->loadSnapshot($targetSnapshotFilename);
 
             if (!is_dir($targetSnapshot['base-path'])) {
-                throw new \InvalidArgumentException('The base path from snapshot does not exist: ' . $path);
+                throw new \InvalidArgumentException(
+                    'The base path from snapshot does not exist: ' . $targetSnapshot['base-path']
+                );
             }
-            $logOutput->writeln("<info>🛈 Target folder is at {$targetSnapshot['base-path']}...</info>");
+            $logIo->writeln("<info>🛈 Target folder is at: {$targetSnapshot['base-path']}</info>");
 
-            $logOutput->writeln(sprintf(
+            $logIo->writeln(sprintf(
                 '<info>🛈 %d file(s) found in target snapshot.</info>',
                 count($targetSnapshot['files'])
             ));
@@ -117,41 +142,51 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             if (!is_dir($path)) {
                 throw new \InvalidArgumentException('Invalid path: ' . $path);
             }
-            $logOutput->writeln("<info>🛈 Target folder is at $path...</info>");
+            $logIo->writeln("<info>🛈 Target folder is at: $path</info>");
 
             // Use scanner config from reference snapshot to get comparable results
             $options['scanner-config'] = $referenceSnapshot['scanner-config'];
-            $targetSnapshot = $this->mirror->snapshot($path, $logOutput, $options);
+            $targetSnapshot = $this->mirrorService->snapshot($path, $logIo, $options);
         }
 
-        $diffScannerConfig = $this->mirror->getScannerConfig($options);
+        $diffScannerConfig = $this->mirrorService->getScannerConfig($options);
 
-        $logOutput->writeln(
-            '<info>⏳ Searching for matching files with reference snapshot (this might take a while)...</info>'
+        $logIo->writeln(
+            '⏳ Searching for matching files with reference snapshot (this might take a while)...'
         );
-        $diff = $this->mirror->diffSnapshots(
+        $diff = $this->mirrorService->diffSnapshots(
             $referenceSnapshot,
             $targetSnapshot,
             $diffScannerConfig,
-            $logOutput
+            $logIo
         );
 
-        $logOutput->writeln(sprintf('🛈 %d target file(s) found with matching reference:', count($diff)));
+        $logIo->writeln(sprintf('<info>🛈 %d target file(s) found with matching reference.</info>', count($diff)));
 
-        $this->applyMirroring(
+        if ($options['shell-mode']) {
+            $logIo->note('Shell mode enabled: Printing shell commands to STDOUT to allow piping.');
+        }
+        $movedFilesCnt = $this->applyMirroring(
             $diff,
             $targetSnapshot['base-path'],
-            $logOutput,
-            $shellOutput,
+            $logIo,
+            $shellIo,
             $options['dir-mode'],
             $options['shell-mode'],
             $options['dry-run']
         );
-        $logOutput->writeln('');
+        $logIo->newLine();
 
-        $logOutput->writeln(sprintf(
-            "<info>✔ Finished in %s</info>",
-            DateTime::secondsToTime(microtime(true) - $startTime)
+        $logIo->success(sprintf(
+            "✔ Finished in %s. %d file(s) have been moved%s.",
+            DateTime::secondsToTime(microtime(true) - $startTime),
+            $movedFilesCnt,
+            $options['dry-run']
+                ? ' (dry-run mode enabled)'
+                : ($options['shell-mode']
+                    ? ' (shell mode enabled)'
+                    : ''
+                )
         ));
 
         return self::SUCCESS;
@@ -179,45 +214,76 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
     /**
      * @param $filename
      * @return array
+     * @throws \Exception
      */
     protected function loadSnapshot($filename): array {
+        if (!is_file($filename) || !is_readable($filename)) {
+            throw new \Exception("$filename does not exist or is not readable.");
+        }
+
         return json_decode(file_get_contents($filename), true);
     }
 
     /**
      * @param array $diffResults
      * @param string $targetBasePath
-     * @param OutputInterface $logOutput
-     * @param OutputInterface $shellOutput
+     * @param SymfonyStyle $logIo
+     * @param SymfonyStyle $shellIo
      * @param array $options
+     * @return int
      */
     public function applyMirroring(
         array $diffResults,
         string $targetBasePath,
-        OutputInterface $logOutput,
-        OutputInterface $shellOutput,
+        SymfonyStyle $logIo,
+        SymfonyStyle $shellIo,
         int $dirMode,
         bool $shellMode,
         bool $dryRun
     ) {
+        $movedFilesCnt = 0;
+
         foreach ($diffResults as $match) {
+            $targetFileCurrentPath = $targetBasePath . DIRECTORY_SEPARATOR . $match['target']['path'];
             $targetFileNewPath = $targetBasePath . DIRECTORY_SEPARATOR . $match['reference']['path'];
 
             if ($shellMode) {
-                $this->moveFileShell($match, $targetFileNewPath, $shellOutput);
+                if ($this->moveFileShell($targetFileCurrentPath, $targetFileNewPath, $match, $shellIo)) {
+                    $movedFilesCnt++;
+                }
             } else {
-                $this->moveFileNative($match, $targetFileNewPath, $logOutput, $dirMode, $dryRun);
+                if ($this->moveFileNative(
+                    $targetFileCurrentPath,
+                    $targetFileNewPath,
+                    $match,
+                    $logIo,
+                    $dirMode,
+                    $dryRun
+                )) {
+                    $movedFilesCnt++;
+                }
             }
         }
+
+        return $movedFilesCnt;
     }
 
+    /**
+     * @param string $targetFileCurrentPath
+     * @param string $targetFileNewPath
+     * @param array $match
+     * @param InputInterface $input
+     * @param SymfonyStyle $io
+     * @return bool
+     */
     protected function moveFileShell(
-        array $match,
+        string $targetFileCurrentPath,
         string $targetFileNewPath,
-        OutputInterface $output
+        array $match,
+        SymfonyStyle $io
     ) {
-        if ($output->isVerbose()) {
-            $output->writeln(
+        if ($io->isVerbose()) {
+            $io->writeln(
                 sprintf(
                     '# FILE                  %s | Size: %s | Time: %s | Checksum: %s',
                     $match['target']['path'],
@@ -226,7 +292,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                     $match['target']['checksum-summary'] ?? '(unknown)'
                 )
             );
-            $output->writeln(
+            $io->writeln(
                 sprintf(
                     '# MATCHES FROM SNAPSHOT %s | Size: %s | Time: %s | Checksum: %s',
                     $match['reference']['path'],
@@ -235,53 +301,65 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                     $match['reference']['checksum-summary'] ?? '(unknown)'
                 )
             );
-
-            $output->write(sprintf(
+        } else {
+            $io->writeln(sprintf(
                 '# %s => %s',
-                $match['target']['path'],
+                $targetFileCurrentPath,
                 $targetFileNewPath
             ));
         }
 
         if ($match['target']['path'] == $match['reference']['path']) {
-            if ($output->isVerbose()) {
-                $output->writeln(' # INFO: Already at the expected location.');
+            if ($io->isVerbose()) {
+                $io->writeln(' # INFO: Already at the expected location.');
             }
         } else {
-            if ($output->isVerbose()) {
+            if ($io->isVerbose()) {
                 if (file_exists($targetFileNewPath)) {
-                    $output->writeln(
-                        ' # NOTICE: A different file already exists at that location, skipping.'
+                    $io->writeln(
+                        '# WARNING: A different file already exists at that location, skipping.'
                     );
-                    return;
+
+                    return false;
                 }
-                $output->writeln('');
             }
 
             if (!is_dir($parentDir = dirname($targetFileNewPath))) {
-                $output->writeln(sprintf(
+                $io->writeln(sprintf(
                     'mkdir -p %s ;',
                     escapeshellarg($parentDir)
                 ));
             }
 
-            $output->writeln(sprintf(
+            $io->writeln(sprintf(
                 'mv %s %s ;',
-                escapeshellarg($match['target']['path']),
+                escapeshellarg($targetFileCurrentPath),
                 escapeshellarg($targetFileNewPath)
             ));
         }
+
+        return false;   // This method does not really *move* files so always return FALSE
     }
 
+    /**
+     * @param string $targetFileCurrentPath
+     * @param string $targetFileNewPath
+     * @param array $match
+     * @param SymfonyStyle $io
+     * @param int $dirMode
+     * @param bool $dryRun
+     * @return bool
+     */
     protected function moveFileNative(
-        array $match,
+        string $targetFileCurrentPath,
         string $targetFileNewPath,
-        OutputInterface $output,
+        array $match,
+        SymfonyStyle $io,
         int $dirMode,
         bool $dryRun
     ) {
-        if ($output->isVerbose()) {
-            $output->writeln(
+        if ($io->isVerbose()) {
+            $io->writeln(
                 sprintf(
                     '* FILE                  %s | Size: %s | Time: %s | Checksum: %s',
                     $match['target']['path'],
@@ -290,7 +368,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                     $match['target']['checksum-summary'] ?? '(unknown)'
                 )
             );
-            $output->writeln(
+            $io->writeln(
                 sprintf(
                     '  MATCHES FROM SNAPSHOT %s | Size: %s | Time: %s | Checksum: %s',
                     $match['reference']['path'],
@@ -301,37 +379,55 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             );
         }
 
-        $output->write(sprintf(
-            '  %s => %s',
-            $match['target']['path'],
-            $targetFileNewPath
-        ));
-
         if ($match['target']['path'] == $match['reference']['path']) {
-            $output->writeln(' <info>✔ Already at the expected location.</info>');
+            if ($io->isVerbose()) {
+                $io->writeln(sprintf('<info>%s ✔ Already at the expected location.</info>', $targetFileCurrentPath));
+            }
         } else {
             if (file_exists($targetFileNewPath)) {
-                $output->writeln(
-                    '  <fg=red>✖ A different file already exists at that location, skipping.</>'
-                );
-                return;
+                $io->warning(sprintf('A different file already exists at %s, skipping.', $targetFileNewPath));
+
+                return false;
+            }
+
+            $question = sprintf(
+                "❓ Move file from %s\n" .
+                "               to <fg=magenta>%s</>?",
+                $targetFileCurrentPath,
+                $targetFileNewPath
+            );
+            if (strtolower(trim($io->ask($question, 'y'))) != 'y') {
+                $io->writeln('<fg=blue>🖮 Skipped.</>');
+
+                return false;
             }
 
             if ($dryRun) {
-                $output->writeln('  <fg=blue>✋ Dry-run enabled, keeping file in place.</>');
+                $io->writeln('<fg=blue>✋ Dry-run enabled, keeping file in place.</>');
             } else {
                 if (!is_dir($parentDir = dirname($targetFileNewPath))) {
                     if (!mkdir($parentDir, $dirMode, true)) {
-                        $output->writeln(sprintf('  <error>✖ Could not create directory at %s.</error>', $parentDir));
-                        return;
+                        $io->error(sprintf('Could not create directory %s.', $parentDir));
+
+                        return false;
                     }
                 }
-                if (@rename($match['target']['path'], $targetFileNewPath)) {
-                    $output->writeln('  <info>✔ OK, file moved successfully.</info>');
+                if (@rename($targetFileCurrentPath, $targetFileNewPath)) {
+                    $io->writeln(sprintf('<info>File %s moved successfully.</info>', $targetFileCurrentPath));
+
+                    return true;
                 } else {
-                    $output->writeln('  <error>✖ Could not move file.</error>');
+                    $io->error(sprintf(
+                        'Could not move file from %s to %s.',
+                        $targetFileCurrentPath,
+                        $targetFileNewPath
+                    ));
+
+                    return false;
                 }
             }
         }
+
+        return false;
     }
 }

@@ -1,27 +1,32 @@
 <?php
 namespace App\PhofmitBundle\Command;
 
-use App\IQSocketControlBundle\Connector\IQSocket;
 use App\PhofmitBundle\Helper\DateTime;
+use App\PhofmitBundle\Helper\FileChecksum;
 use App\PhofmitBundle\Service\Mirror;
-use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
 
 
 class SnapshotCommand extends \Symfony\Component\Console\Command\Command
 {
     /** @var Mirror */
-    protected $mirror;
+    protected $mirrorService;
+
+    /** @var \App\PhofmitBundle\Helper\FileChecksum */
+    protected $fileChecksumHelper;
 
     public function __construct(
-        string $name = null,
-        Mirror $mirror
+        Mirror $mirrorService,
+        FileChecksum $fileChecksumHelper,
+        string $name = null
     ) {
         parent::__construct($name);
-        $this->mirror = $mirror;
+        $this->mirrorService = $mirrorService;
+        $this->fileChecksumHelper = $fileChecksumHelper;
     }
 
     protected function configure()
@@ -48,6 +53,8 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
             throw new \InvalidArgumentException('Invalid path: ' . $path);
         }
 
+        $io = new SymfonyStyle($input, $output);
+
         $snapshotFilename = strtr(
             $input->getOption('snapshot-filename'),
             [
@@ -57,17 +64,35 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
             ]
         );
 
-        $output->writeln("<info>🛈 Snapshot will be written to $snapshotFilename.</info>");
-        $output->writeln("<info>⏳ Scanning folder $path...</info>");
+        $io->writeln("<info>🛈 Snapshot will be written to $snapshotFilename.</info>");
+        $io->writeln("⏳ Scanning folder $path...");
         $startTime = microtime(true);
 
-        $snapshot = $this->mirror->snapshot($path, $output);
-        $output->writeln('');
+        $snapshot = $this->mirrorService->snapshot($path, $io);
 
-        $output->writeln("<info>✎ Writing snapshot to $snapshotFilename...</info>");
-        file_put_contents($snapshotFilename, json_encode($snapshot, JSON_PRETTY_PRINT));
-        $output->writeln(sprintf(
-            "<info>✔ Finished in %s</info>",
+        if ($io->isVerbose()) {
+            $io->table(
+                ['path', 'size', 'mtime', 'checksums'],
+                array_map(function($fileData) {
+                    return [
+                        'path' => $fileData['path'],
+                        'size' => $fileData['size'] ?? '(unknown)',
+                        'mtime' => $fileData['mtime'] ?? '(unknown)',
+                        'checksums' => $this->fileChecksumHelper->getPrintableSummary($fileData['checksums']),
+                    ];
+                }, $snapshot['files'])
+            );
+        }
+
+        $io->writeln("<info>✎ Writing snapshot to $snapshotFilename...</info>");
+        if ($bytes = file_put_contents($snapshotFilename, json_encode($snapshot, JSON_PRETTY_PRINT))) {
+            $io->writeln(sprintf('<info>✔ OK, %d byte(s) have been written.</info>', $bytes));
+        } else {
+            $io->error("Could not write snapshot file at: $snapshotFilename");
+        }
+
+        $io->success(sprintf(
+            "✔ Finished in %s",
             DateTime::secondsToTime(microtime(true) - $startTime)
         ));
 
