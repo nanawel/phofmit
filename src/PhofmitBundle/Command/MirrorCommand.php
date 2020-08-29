@@ -444,7 +444,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                     }
                 }
                 if (@rename($targetFileCurrentPath, $targetFileNewPath)) {
-                    $io->writeln(sprintf('<info>File %s moved successfully.</info>', $targetFileCurrentPath));
+                    $io->writeln(sprintf('<info>✔ File %s moved successfully.</info>', $targetFileCurrentPath));
 
                     return true;
                 } else {
