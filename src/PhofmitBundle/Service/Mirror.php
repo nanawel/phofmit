@@ -52,7 +52,7 @@ class Mirror
         }
 
         $pb = new ProgressBar($io, 0, 0.5);
-        $pb->setFormat('%current% [%bar%] %message%');
+        $pb->setFormat('%current% [%bar%] %memory:6s% %message%');
         $pb->setMessage('Starting...');
         $pb->start();
 
@@ -65,7 +65,7 @@ class Mirror
 
         $files = [];
         $pb->setMaxSteps(count($splFiles));
-        $pb->setFormat('%current%/%max% [%bar%] %message%');
+        $pb->setFormat('%current%/%max% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s% %message%');
         $pb->start();
         foreach ($splFiles as $splFile) {
             $pb->setMessage("🔬 {$splFile->getRelativePathname()}");
@@ -178,7 +178,7 @@ class Mirror
         }
 
         $pb = new ProgressBar($io, 0, 0.5);
-        $pb->setFormat('%current% [%bar%] %message%');
+        $pb->setFormat('%current%/%max% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s% %message%');
         $pb->setMessage('Starting...');
         $pb->setMaxSteps(count($target['files']));
         $pb->start();
