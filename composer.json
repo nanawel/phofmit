@@ -2,7 +2,15 @@
     "type": "project",
     "name": "nanawel/phofmit",
     "description": "Phofmit: PHP Offline Folder MIrroring Tool",
-    "license": "proprietary",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Anaël Ollier",
+            "role": "Developer",
+            "email": "nanawel@gmail.com",
+            "homepage": "https://github.com/nanawel"
+        }
+    ],
     "require": {
         "php": "^7.2.5",
         "ext-ctype": "*",
