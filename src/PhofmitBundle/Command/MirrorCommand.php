@@ -283,6 +283,13 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         SymfonyStyle $io
     ) {
         if ($io->isVerbose()) {
+            $io->writeln(sprintf(
+                '# %s => %s',
+                $targetFileCurrentPath,
+                $targetFileNewPath
+            ));
+        }
+        if ($io->isVeryVerbose()) {
             $io->writeln(
                 sprintf(
                     '# FILE                  %s | Size: %s | Time: %s | Checksum: %s',
@@ -301,17 +308,11 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                     $match['reference']['checksum-summary'] ?? '(unknown)'
                 )
             );
-        } else {
-            $io->writeln(sprintf(
-                '# %s => %s',
-                $targetFileCurrentPath,
-                $targetFileNewPath
-            ));
         }
 
         if ($match['target']['path'] == $match['reference']['path']) {
             if ($io->isVerbose()) {
-                $io->writeln(' # INFO: Already at the expected location.');
+                $io->writeln('# INFO: Already at the expected location.');
             }
         } else {
             if ($io->isVerbose()) {
@@ -359,6 +360,9 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         bool $dryRun
     ) {
         if ($io->isVerbose()) {
+            $io->writeln(sprintf('🗋 %s => %s', $match['target']['path'], $match['reference']['path']));
+        }
+        if ($io->isVeryVerbose()) {
             $io->writeln(
                 sprintf(
                     '* FILE                  %s | Size: %s | Time: %s | Checksum: %s',
@@ -381,11 +385,11 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 
         if ($match['target']['path'] == $match['reference']['path']) {
             if ($io->isVerbose()) {
-                $io->writeln(sprintf('<info>%s ✔ Already at the expected location.</info>', $targetFileCurrentPath));
+                $io->writeln('<info>✔ Already at the expected location.</info>');
             }
         } else {
             if (file_exists($targetFileNewPath)) {
-                $io->warning(sprintf('A different file already exists at %s, skipping.', $targetFileNewPath));
+                $io->warning(sprintf('A file already exists at %s, skipping.', $targetFileNewPath));
 
                 return false;
             }
