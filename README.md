@@ -38,21 +38,23 @@ bin/console phofmit:mirror ...
 > Using [`thecodingmachine/php:7.3-v3-cli`](https://github.com/thecodingmachine/docker-images-php)
 > as base image, if PHP is not available on local host.
 
+Here to mount `/my/reference/folder` and `/my/target/folder` and be able to
+analyze them (you might want to mount more folders as needed):
+
 ```
-docker run -it \
-    --rm -v $(pwd):/usr/src/app \
+docker run -it --rm \
+    -v $(pwd):/usr/src/app \
     -v /tmp:/mnt/tmp \
+    -v /my/reference/folder:/mnt/reference \
     -v /my/target/folder:/mnt/target \
-    -v /usr/local/bin/composer:/usr/local/bin/composer \
-    -v ~/.composer/auth.json:/root/.composer/auth.json \
     thecodingmachine/php:7.3-v3-cli \
     /bin/bash
 
 composer install
 
 # See command details below
-bin/console phofmit:snapshot ...
-bin/console phofmit:mirror ...
+bin/console phofmit:snapshot phofmit:snapshot [options] [--] /my/reference/folder
+bin/console phofmit:mirror [options] [--] <snapshot-filename> /my/target/folder
 ```
 
 ### Command `phofmit:snapshot`
