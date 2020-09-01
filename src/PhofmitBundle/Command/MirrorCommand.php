@@ -270,24 +270,28 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
     ) {
         $movedFilesCnt = 0;
 
-        foreach ($diffResults as $match) {
-            $targetFileCurrentPath = $targetBasePath . DIRECTORY_SEPARATOR . $match['target']['path'];
-            $targetFileNewPath = $targetBasePath . DIRECTORY_SEPARATOR . $match['reference']['path'];
+        if (empty($diffResults)) {
+            $logIo->note('No syncable files found.');
+        } else {
+            foreach ($diffResults as $match) {
+                $targetFileCurrentPath = $targetBasePath . DIRECTORY_SEPARATOR . $match['target']['path'];
+                $targetFileNewPath = $targetBasePath . DIRECTORY_SEPARATOR . $match['reference']['path'];
 
-            if ($shellMode) {
-                if ($this->moveFileShell($targetFileCurrentPath, $targetFileNewPath, $match, $shellIo)) {
-                    $movedFilesCnt++;
-                }
-            } else {
-                if ($this->moveFileNative(
-                    $targetFileCurrentPath,
-                    $targetFileNewPath,
-                    $match,
-                    $logIo,
-                    $dirMode,
-                    $dryRun
-                )) {
-                    $movedFilesCnt++;
+                if ($shellMode) {
+                    if ($this->moveFileShell($targetFileCurrentPath, $targetFileNewPath, $match, $shellIo)) {
+                        $movedFilesCnt++;
+                    }
+                } else {
+                    if ($this->moveFileNative(
+                        $targetFileCurrentPath,
+                        $targetFileNewPath,
+                        $match,
+                        $logIo,
+                        $dirMode,
+                        $dryRun
+                    )) {
+                        $movedFilesCnt++;
+                    }
                 }
             }
         }
