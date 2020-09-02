@@ -209,7 +209,18 @@ class Mirror
             $matchingFiles = call_user_func_array('array_uintersect', $uintersectArgs);
 
             if (count($matchingFiles) > 1) {
-                $io->warning(sprintf('Multiple matching files returned for %s, ignoring.', $file->getPath()));
+                $messages = [
+                    sprintf(
+                        'Multiple matching files returned for %s, ignoring.',
+                        $file->getPath()
+                    )
+                ];
+                if ($io->isVerbose()) {
+                    foreach ($matchingFiles as $matchingFile) {
+                        $messages[] = sprintf(' * %s', $matchingFile->getPath());
+                    }
+                }
+                $io->warning($messages);
             } elseif ($matchingFiles) {
                 $referenceFile = current($matchingFiles);
                 $matches[] = [

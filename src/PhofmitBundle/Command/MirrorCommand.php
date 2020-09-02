@@ -420,8 +420,8 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             }
         } else {
             if (file_exists($targetFileNewPath)) {
-                $io->warning(sprintf('
-                    Cannot move file %s: a file already exists at %s, skipping.',
+                $io->warning(sprintf(
+                    'Cannot move file %s: a file already exists at %s, skipping.',
                     $targetFileCurrentPath,
                     $targetFileNewPath
                 ));
