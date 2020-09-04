@@ -19,8 +19,8 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         Mirror $mirrorService,
         string $name = null
     ) {
-        parent::__construct($name);
         $this->mirrorService = $mirrorService;
+        parent::__construct($name);
     }
 
     protected function configure()
@@ -49,7 +49,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                 'option',
                 'o',
                 InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
-                'Set scanner options.'
+                'Set scanner options: ' . implode(', ', array_keys($this->mirrorService->getScannerConfig()))
             )
             ->addOption(
                 'dir-mode',
