@@ -36,20 +36,7 @@ class Mirror
         array $options = []
     ): array {
         $scannerConfig = $this->getScannerConfig($options);
-
-        $finder = new Finder();
-        $finder->files()
-            ->in($path);
-
-        if ($options['ignore-unreadable'] ?? true) {
-            $finder->ignoreUnreadableDirs();
-        }
-        if ($options['follow-links'] ?? true) {
-            $finder->followLinks();
-        }
-        if ($options['depth'] ?? false) {
-            $finder->depth($options['depth']);
-        }
+        $finder = $this->buildFinder($path, $options, $scannerConfig, $io);
 
         $pb = new ProgressBar($io, 0, 0.5);
         $pb->setFormat('%current% [%bar%] %memory:6s% %message%');
@@ -64,17 +51,21 @@ class Mirror
         }
 
         $files = [];
-        $pb->setMaxSteps(count($splFiles));
-        $pb->setFormat('%current%/%max% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s% %message%');
-        $pb->start();
-        foreach ($splFiles as $splFile) {
-            $pb->setMessage("🔬 {$splFile->getRelativePathname()}");
-            $files[] = $this->scanFile($splFile, $scannerConfig)->toArray();
-            $pb->advance();
+        if (!$splFiles) {
+            $io->warning('No file found in specified target folder with given include patterns (if any).');
+        } else {
+            $pb->setMaxSteps(count($splFiles));
+            $pb->setFormat('%current%/%max% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s% %message%');
+            $pb->start();
+            foreach ($splFiles as $splFile) {
+                $pb->setMessage("🔬 {$splFile->getRelativePathname()}");
+                $files[] = $this->scanFile($splFile, $scannerConfig)->toArray();
+                $pb->advance();
+            }
+            $pb->setMessage(sprintf('<info>🛈 %d file(s) have been analyzed.</info>', count($files)));
+            $pb->finish();
+            $io->newLine();
         }
-        $pb->setMessage(sprintf('<info>🛈 %d file(s) have been analyzed.</info>', count($files)));
-        $pb->finish();
-        $io->newLine();
 
         return [
             'version'        => self::VERSION,
@@ -84,6 +75,53 @@ class Mirror
             'scanner-config' => $scannerConfig,
             'files'          => $files
         ];
+    }
+
+    /**
+     * @param array $options
+     * @return Finder
+     */
+    protected function buildFinder(
+        string $path,
+        array $options,
+        array $scannerConfig,
+        SymfonyStyle $io
+    ) {
+        $finder = new Finder();
+        $finder->files()
+            ->in($path);
+
+        if ($options['ignore-unreadable'] ?? true) {
+            $finder->ignoreUnreadableDirs();
+            if ($io->isVerbose()) {
+                $io->writeln('<info>🛈 ignore-unreadable option enabled.</info>');
+            }
+        }
+        if ($options['follow-links'] ?? true) {
+            $finder->followLinks();
+            if ($io->isVerbose()) {
+                $io->writeln('<info>🛈 follow-links option enabled.</info>');
+            }
+        }
+        if ($options['depth'] ?? false) {
+            $finder->depth($options['depth']);
+            if ($io->isVerbose()) {
+                $io->writeln(sprintf('<info>🛈 depth option set to "%s".</info>', $options['depth']));
+            }
+        }
+        if ($scannerConfig['include'] ?? false) {
+            if (!is_array($scannerConfig['include'])) {
+                throw new \InvalidArgumentException('"include" option must be an array of strings.');
+            }
+            foreach ($scannerConfig['include'] as $include) {
+                $finder->path($include);
+                if ($io->isVerbose()) {
+                    $io->writeln(sprintf('<info>🛈 included path pattern: "%s".</info>', $include));
+                }
+            }
+        }
+
+        return $finder;
     }
 
     /**
@@ -256,6 +294,7 @@ class Mirror
      */
     public function getScannerConfig(array $options = []) {
         return [
+            'include'              => $options['scanner-config']['include']              ?? [],
             'use-size'             => $options['scanner-config']['use-size']             ?? true,
             'use-mtime'            => $options['scanner-config']['use-mtime']            ?? true,
             'use-checksum'         => $options['scanner-config']['use-checksum']         ?? true,

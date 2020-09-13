@@ -170,8 +170,10 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             if ($runSnapshot) {
                 // Use scanner config from reference snapshot to get comparable results
                 $options['scanner-config'] = $referenceSnapshot['scanner-config'];
+
                 $targetSnapshot = $this->mirrorService->snapshot($path, $logIo, $options);
 
+                // Save result in cache file to speed up next execution if any
                 @file_put_contents($targetSnapshotCacheFilename, json_encode($targetSnapshot, JSON_PRETTY_PRINT));
             }
         }

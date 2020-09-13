@@ -24,9 +24,9 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
         FileChecksum $fileChecksumHelper,
         string $name = null
     ) {
-        parent::__construct($name);
         $this->mirrorService = $mirrorService;
         $this->fileChecksumHelper = $fileChecksumHelper;
+        parent::__construct($name);
     }
 
     protected function configure()
@@ -39,6 +39,18 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
                 InputOption::VALUE_REQUIRED,
                 'Filename of the generated snapshot file. Use {now} to inject current date/time.',
                 '{hostname}-{path}-{now}.phofmit.json'
+            )
+            ->addOption(
+                'option',
+                'o',
+                InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
+                'Set scanner options: ' . implode(', ', array_keys($this->mirrorService->getScannerConfig()))
+            )
+            ->addOption(
+                'include',
+                'i',
+                InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
+                'Include path patterns'
             )
             ->addArgument(
                 'path',
@@ -55,6 +67,8 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
 
         $io = new SymfonyStyle($input, $output);
 
+        $options = $this->readOptions($input);
+
         $snapshotFilename = strtr(
             $input->getOption('snapshot-filename'),
             [
@@ -68,9 +82,9 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
         $io->writeln("⏳ Scanning folder $path...");
         $startTime = microtime(true);
 
-        $snapshot = $this->mirrorService->snapshot($path, $io);
+        $snapshot = $this->mirrorService->snapshot($path, $io, $options);
 
-        if ($io->isVerbose()) {
+        if ($snapshot['files'] && $io->isVerbose()) {
             $io->table(
                 ['path', 'size', 'mtime', 'checksums'],
                 array_map(function($fileData) {
@@ -97,5 +111,24 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
         ));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param InputInterface $input
+     * @return array
+     */
+    protected function readOptions(InputInterface $input): array {
+        $options = [];
+        foreach ($input->getOption('option') as $option) {
+            list($key, $value) = explode('=', $option);
+            $options['scanner-config'][$key] = $value;
+        }
+        if ($includes = $input->getOption('include')) {
+            foreach ($includes as $include) {
+                $options['scanner-config']['include'][] = $include;
+            }
+        }
+
+        return $options;
     }
 }
