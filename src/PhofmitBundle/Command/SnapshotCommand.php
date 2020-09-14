@@ -50,7 +50,7 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
                 'include',
                 'i',
                 InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
-                'Include path patterns'
+                'Include path patterns (strings or regexps if enclosed in slashes "/")'
             )
             ->addArgument(
                 'path',

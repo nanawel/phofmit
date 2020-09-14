@@ -5,6 +5,13 @@ This tool aims to ease folders synchronization on different hosts when
 most files are already present on both filesystems but their respective
 locations differ.
 
+It can be used together with `rsync` in order to minimize the data transfer
+when some of the files are already present on the target host.
+
+> Note: Although the main objective is to sync files _between hosts_, it
+> can also simply be used to sync files between two directories on the same
+> host.
+
 **Example:**
 
 Host 1 (_reference_) | Host 2 (_target_) | Expected action
@@ -72,6 +79,8 @@ Arguments:
 
 Options:
   -f, --snapshot-filename=SNAPSHOT-FILENAME  Filename of the generated snapshot file. Use {now} to inject current date/time. [default: "{hostname}-{path}-{now}.phofmit.json"]
+  -o, --option=OPTION                        Set scanner options: include, use-size, use-mtime, use-checksum, beginning-chunk-size, beginning-chunk-algo (multiple values allowed)
+  -i, --include=INCLUDE                      Include path patterns (strings or regexps if enclosed in slashes "/") (multiple values allowed)
   -h, --help                                 Display this help message
   -q, --quiet                                Do not output any message
   -V, --version                              Display this application version
