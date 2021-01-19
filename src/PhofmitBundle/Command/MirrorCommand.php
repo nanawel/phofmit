@@ -84,6 +84,8 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         $logIo->setDecorated(true);
         $shellIo = $io;
 
+        $logIo->title('MIRRORING');
+
         $referenceSnapshotFilename = $input->getArgument('snapshot-filename');
         if (!is_file($referenceSnapshotFilename) || !is_readable($referenceSnapshotFilename)) {
             $logIo->error('Invalid snapshot path: ' . $referenceSnapshotFilename);
@@ -418,7 +420,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 
         if ($match['target']['path'] == $match['reference']['path']) {
             if ($io->isVerbose()) {
-                $io->writeln('<info>✔ Already at the expected location.</info>');
+                $io->writeln('  <info>✔ Already at the expected location.</info>');
             }
         } else {
             if (file_exists($targetFileNewPath)) {

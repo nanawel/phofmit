@@ -39,7 +39,7 @@ class Mirror
         $finder = $this->buildFinder($path, $options, $scannerConfig, $io);
 
         $pb = new ProgressBar($io, 0, 0.5);
-        $pb->setFormat('%current% [%bar%] %memory:6s% %message%');
+        $pb->setFormat("%current% [%bar%] %memory:6s%\n %message%");
         $pb->setMessage('Starting...');
         $pb->start();
 
@@ -55,16 +55,17 @@ class Mirror
             $io->warning('No file found in specified target folder with given include patterns (if any).');
         } else {
             $pb->setMaxSteps(count($splFiles));
-            $pb->setFormat('%current%/%max% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s% %message%');
+            $pb->setFormat("%current:-4s%/%max:-4s% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s%\n %message%");
             $pb->start();
             foreach ($splFiles as $splFile) {
                 $pb->setMessage("🔬 {$splFile->getRelativePathname()}");
                 $files[] = $this->scanFile($splFile, $scannerConfig)->toArray();
                 $pb->advance();
             }
-            $pb->setMessage(sprintf('<info>🛈 %d file(s) have been analyzed.</info>', count($files)));
             $pb->finish();
             $io->newLine();
+
+            $io->writeln(sprintf('<info>🛈 %d file(s) have been analyzed.</info>', count($files)));
         }
 
         return [
@@ -216,7 +217,7 @@ class Mirror
         }
 
         $pb = new ProgressBar($io, 0, 0.5);
-        $pb->setFormat('%current%/%max% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s% %message%');
+        $pb->setFormat("%current%/%max% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s%\n %message%");
         $pb->setMessage('Starting...');
         $pb->setMaxSteps(count($target['files']));
         $pb->start();

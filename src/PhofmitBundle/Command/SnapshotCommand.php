@@ -78,6 +78,8 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
             ]
         );
 
+        $io->title('SNAPSHOT GENERATION');
+
         $io->writeln("<info>🛈 Snapshot will be written to $snapshotFilename.</info>");
         $io->writeln("⏳ Scanning folder $path...");
         $startTime = microtime(true);
