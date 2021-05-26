@@ -59,7 +59,11 @@ class Mirror
             $pb->start();
             foreach ($splFiles as $splFile) {
                 $pb->setMessage("🔬 {$splFile->getRelativePathname()}");
-                $files[] = $this->scanFile($splFile, $scannerConfig)->toArray();
+                try {
+                    $files[] = $this->scanFile($splFile, $scannerConfig)->toArray();
+                } catch (\Throwable $e) {
+                    $io->warning("{$splFile->getRelativePathname()}: {$e->getMessage()}");
+                }
                 $pb->advance();
             }
             $pb->finish();
@@ -129,6 +133,7 @@ class Mirror
      * @param SplFileInfo $fileInfo
      * @param array $scannerConfig
      * @return File
+     * @throws \Error
      */
     protected function scanFile(
         SplFileInfo $fileInfo,
@@ -228,58 +233,62 @@ class Mirror
             $pb->setMessage($file->getPath());
             $pb->advance();
 
-            $lookupArrays = [];
-            if ($scannerConfig['use-size']) {
-                $lookupArrays[] = $referenceIndex['by-size'][$file->getSize()] ?? [];
-            }
-            if ($scannerConfig['use-mtime']) {
-                $lookupArrays[] = $referenceIndex['by-mtime'][$file->getMtime()] ?? [];
-            }
-            if ($scannerConfig['use-checksum']) {
-                foreach ($file->getChecksums() as $checksum) {
-                    $lookupArrays[] = $referenceIndex['by-checksum'][$checksum['start']] ?? [];
+            try {
+                $lookupArrays = [];
+                if ($scannerConfig['use-size']) {
+                    $lookupArrays[] = $referenceIndex['by-size'][$file->getSize()] ?? [];
                 }
-            }
-
-            /** @var File[] $matchingFiles */
-            $uintersectArgs = array_merge($lookupArrays, [function($a, $b) {
-                return strcmp(spl_object_hash($a), spl_object_hash($b));
-            }]);
-            $matchingFiles = call_user_func_array('array_uintersect', $uintersectArgs);
-
-            if (count($matchingFiles) > 1) {
-                $messages = [
-                    sprintf(
-                        'Multiple matching files returned for %s, ignoring.',
-                        $file->getPath()
-                    )
-                ];
-                if ($io->isVerbose()) {
-                    foreach ($matchingFiles as $matchingFile) {
-                        $messages[] = sprintf(' * %s', $matchingFile->getPath());
+                if ($scannerConfig['use-mtime']) {
+                    $lookupArrays[] = $referenceIndex['by-mtime'][$file->getMtime()] ?? [];
+                }
+                if ($scannerConfig['use-checksum']) {
+                    foreach ($file->getChecksums() as $checksum) {
+                        $lookupArrays[] = $referenceIndex['by-checksum'][$checksum['start']] ?? [];
                     }
                 }
-                $io->warning($messages);
-            } elseif ($matchingFiles) {
-                $referenceFile = current($matchingFiles);
-                $matches[] = [
-                    'reference' => [
-                        'path'  => $referenceFile->getPath(),
-                        'size'  => $referenceFile->getSize(),
-                        'mtime' => $referenceFile->getMtime(),
-                        'checksum-summary' => $this->fileChecksumHelper->getPrintableSummary(
-                            $referenceFile->getChecksums()
-                        ),
-                    ],
-                    'target' => [
-                        'path'     => $file->getPath(),
-                        'size'     => $file->getSize(),
-                        'mtime'    => $file->getMtime(),
-                        'checksum-summary' => $this->fileChecksumHelper->getPrintableSummary(
-                            $file->getChecksums()
-                        ),
-                    ]
-                ];
+
+                /** @var File[] $matchingFiles */
+                $uintersectArgs = array_merge($lookupArrays, [function($a, $b) {
+                    return strcmp(spl_object_hash($a), spl_object_hash($b));
+                }]);
+                $matchingFiles = call_user_func_array('array_uintersect', $uintersectArgs);
+
+                if (count($matchingFiles) > 1) {
+                    $messages = [
+                        sprintf(
+                            'Multiple matching files returned for %s, ignoring.',
+                            $file->getPath()
+                        )
+                    ];
+                    if ($io->isVerbose()) {
+                        foreach ($matchingFiles as $matchingFile) {
+                            $messages[] = sprintf(' * %s', $matchingFile->getPath());
+                        }
+                    }
+                    $io->warning($messages);
+                } elseif ($matchingFiles) {
+                    $referenceFile = current($matchingFiles);
+                    $matches[] = [
+                        'reference' => [
+                            'path'  => $referenceFile->getPath(),
+                            'size'  => $referenceFile->getSize(),
+                            'mtime' => $referenceFile->getMtime(),
+                            'checksum-summary' => $this->fileChecksumHelper->getPrintableSummary(
+                                $referenceFile->getChecksums()
+                            ),
+                        ],
+                        'target' => [
+                            'path'     => $file->getPath(),
+                            'size'     => $file->getSize(),
+                            'mtime'    => $file->getMtime(),
+                            'checksum-summary' => $this->fileChecksumHelper->getPrintableSummary(
+                                $file->getChecksums()
+                            ),
+                        ]
+                    ];
+                }
+            } catch (\Throwable $e) {
+                $io->warning("{$file->getPath()}: {$e->getMessage()}");
             }
         }
         $pb->setMessage('Finished.');
