@@ -18,7 +18,7 @@ class Shell implements FileMoverInterface
 
     public function __construct(
         OutputInterface $io,
-        int $dirMode = 0777
+        int $dirMode = 0775
     ) {
         $this->io = $io;
         $this->dirMode = $dirMode;

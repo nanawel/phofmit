@@ -62,7 +62,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                 'd',
                 InputOption::VALUE_REQUIRED,
                 'Mode for directories created when mirroring.',
-                '0777'
+                '0775'
             )
             ->addOption(
                 'locale',
