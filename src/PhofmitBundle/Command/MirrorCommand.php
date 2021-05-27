@@ -2,7 +2,11 @@
 namespace App\PhofmitBundle\Command;
 
 use App\PhofmitBundle\Helper\DateTime;
+use App\PhofmitBundle\Service\FileMover\FileMoverInterface;
+use App\PhofmitBundle\Service\FileMover\Native;
+use App\PhofmitBundle\Service\FileMover\Shell;
 use App\PhofmitBundle\Service\Mirror;
+use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -12,6 +16,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 class MirrorCommand extends \Symfony\Component\Console\Command\Command
 {
+    const CANCELED = 2;
+
     /** @var Mirror */
     protected $mirrorService;
 
@@ -56,7 +62,14 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                 'd',
                 InputOption::VALUE_REQUIRED,
                 'Mode for directories created when mirroring.',
-                0777
+                '0777'
+            )
+            ->addOption(
+                'locale',
+                'l',
+                InputOption::VALUE_REQUIRED,
+                'Locale to use when dealing with paths using non-ASCII characters.',
+                'en_US.UTF-8'
             )
             ->addArgument(
                 'snapshot-filename',
@@ -79,16 +92,16 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $io = new SymfonyStyle($input, $output);
-        /** @var SymfonyStyle $logIo */
-        $logIo = $io->getErrorStyle();
-        $logIo->setDecorated(true);
+        /** @var SymfonyStyle $errIo */
+        $errIo = $io->getErrorStyle();
+        $errIo->setDecorated(true);
         $shellIo = $io;
 
-        $logIo->title('MIRRORING');
+        $errIo->title('MIRRORING');
 
         $referenceSnapshotFilename = $input->getArgument('snapshot-filename');
         if (!is_file($referenceSnapshotFilename) || !is_readable($referenceSnapshotFilename)) {
-            $logIo->error('Invalid snapshot path: ' . $referenceSnapshotFilename);
+            $errIo->error('Invalid snapshot path: ' . $referenceSnapshotFilename);
 
             return self::FAILURE;
         }
@@ -96,19 +109,22 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 
         $options = $this->readOptions($input);
 
+        // See https://www.php.net/manual/fr/function.escapeshellarg.php#99213
+        setlocale(LC_CTYPE, $options['locale']);
+
         if ($options['shell-mode']) {
-            $logIo->note('Using shell output.');
+            $errIo->note('Using shell output.');
         }
 
-        $logIo->writeln("<info>🛈 Using snapshot file at: $referenceSnapshotFilename</info>");
+        $errIo->writeln("<info>🛈 Using snapshot file at: $referenceSnapshotFilename</info>");
 
         $startTime = microtime(true);
         if ($options['dry-run']) {
-            $logIo->note('DRY-RUN ENABLED.');
+            $errIo->note('DRY-RUN ENABLED.');
         }
 
         if ($options['dry-run'] && $options['shell-mode']) {
-            $logIo->error('Shell output and dry-mode are mutually exclusive.');
+            $errIo->error('Shell output and dry-mode are mutually exclusive.');
 
             return self::FAILURE;
         }
@@ -117,13 +133,13 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             $referenceSnapshot = $this->loadSnapshot($referenceSnapshotFilename);
         }
         catch (\Throwable $e) {
-            $io->error($e->getMessage());
+            $errIo->error($e->getMessage());
 
             return self::FAILURE;
         }
 
         if ($targetSnapshotFilename = $input->getOption('target-snapshot')) {
-            $logIo->writeln(sprintf('<info>🛈 Loading target snapshot from: %s</info>', $targetSnapshotFilename));
+            $errIo->writeln(sprintf('<info>🛈 Loading target snapshot from: %s</info>', $targetSnapshotFilename));
             $targetSnapshot = $this->loadSnapshot($targetSnapshotFilename);
 
             if (!is_dir($targetSnapshot['base-path'])) {
@@ -131,9 +147,9 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                     'The base path from snapshot does not exist: ' . $targetSnapshot['base-path']
                 );
             }
-            $logIo->writeln("<info>🛈 Target folder is at: {$targetSnapshot['base-path']}</info>");
+            $errIo->writeln("<info>🛈 Target folder is at: {$targetSnapshot['base-path']}</info>");
 
-            $logIo->writeln(sprintf(
+            $errIo->writeln(sprintf(
                 '<info>🛈 %d file(s) found in target snapshot.</info>',
                 count($targetSnapshot['files'])
             ));
@@ -144,7 +160,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             if (!is_dir($path)) {
                 throw new \InvalidArgumentException('Invalid path: ' . $path);
             }
-            $logIo->writeln("<info>🛈 Target folder is at: $path</info>");
+            $errIo->writeln("<info>🛈 Target folder is at: $path</info>");
 
             $targetSnapshotCacheFilename = $this->getTargetSnapshotCacheFilename(
                 $path,
@@ -173,7 +189,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                 // Use scanner config from reference snapshot to get comparable results
                 $options['scanner-config'] = $referenceSnapshot['scanner-config'];
 
-                $targetSnapshot = $this->mirrorService->snapshot($path, $logIo, $options);
+                $targetSnapshot = $this->mirrorService->snapshot($path, $errIo, $options);
 
                 // Save result in cache file to speed up next execution if any
                 @file_put_contents($targetSnapshotCacheFilename, json_encode($targetSnapshot, JSON_PRETTY_PRINT));
@@ -182,33 +198,41 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 
         $diffScannerConfig = $this->mirrorService->getScannerConfig($options);
 
-        $logIo->writeln(
+        if (!$this->validateSnapshots($referenceSnapshot, $targetSnapshot, $errIo)) {
+            $errIo->writeln('Canceled.');
+
+            return self::CANCELED;
+        }
+
+        $errIo->writeln(
             '⏳ Searching for matching files with reference snapshot (this might take a while)...'
         );
         $diff = $this->mirrorService->diffSnapshots(
             $referenceSnapshot,
             $targetSnapshot,
             $diffScannerConfig,
-            $logIo
+            $errIo
         );
 
-        $logIo->writeln(sprintf('<info>🛈 %d target file(s) found with matching reference.</info>', count($diff)));
+        $errIo->writeln(sprintf('<info>🛈 %d target file(s) found with matching reference.</info>', count($diff)));
+        $errIo->writeln('⏳ Mirroring...');
 
         if ($options['shell-mode']) {
-            $logIo->note('Shell mode enabled: Printing shell commands to STDOUT to allow piping.');
+            $errIo->note('Shell mode enabled: Printing shell commands to STDOUT to allow piping.');
         }
+
+        /** @var FileMoverInterface $fileMover */
+        $fileMover = $this->createFileMover($options, $io, $errIo);
+
         $movedFilesCnt = $this->applyMirroring(
             $diff,
             $targetSnapshot['base-path'],
-            $logIo,
-            $shellIo,
-            $options['dir-mode'],
-            $options['shell-mode'],
-            $options['dry-run']
+            $errIo,
+            $fileMover
         );
-        $logIo->newLine();
+        $errIo->newLine();
 
-        $logIo->success(sprintf(
+        $errIo->success(sprintf(
             "✔ Finished in %s. %d file(s) have been moved%s.",
             DateTime::secondsToTime(microtime(true) - $startTime),
             $movedFilesCnt,
@@ -232,8 +256,20 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             'dry-run'    => $input->getOption('dry-run'),
             'shell-mode' => $input->getOption('shell'),
             'dir-mode'   => $input->getOption('dir-mode'),
+            'locale'     => $input->getOption('locale'),
             'scanner-config' => [],
         ];
+
+        // Try to handle wrong octal representation if possible
+        $dirMode = $options['dir-mode'];
+        if (strlen($dirMode) === 3) {
+            $options['dir-mode'] = sscanf("0$dirMode", '%o')[0];
+        } elseif (strlen($dirMode) === 4) {
+            $options['dir-mode'] = sscanf("$dirMode", '%o')[0];
+        } else {
+            throw new \InvalidArgumentException('Invalid directory mode: ' . $options['dir-mode']);
+        }
+
         foreach ($input->getOption('option') as $option) {
             list($key, $value) = explode('=', $option);
             $options['scanner-config'][$key] = $value;
@@ -247,7 +283,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
      * @return array
      * @throws \Exception
      */
-    protected function loadSnapshot($filename): array {
+    protected function loadSnapshot(string $filename): array {
         if (!is_file($filename) || !is_readable($filename)) {
             throw new \Exception("$filename does not exist or is not readable.");
         }
@@ -256,222 +292,94 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
     }
 
     /**
+     * @param array $referenceSnapshot
+     * @param array $targetSnapshot
+     * @param SymfonyStyle $logIo
+     * @return bool
+     */
+    protected function validateSnapshots(
+        array $referenceSnapshot,
+        array $targetSnapshot,
+        SymfonyStyle $logIo
+    ): bool {
+        ksort($referenceSnapshot['scanner-config']);
+        ksort($targetSnapshot['scanner-config']);
+
+        if ($referenceSnapshot['scanner-config'] != $targetSnapshot['scanner-config']) {
+            $logIo->warning(sprintf(
+                "Reference and target snapshots scanner configurations differ.\n"
+                . "Reference: %s\nTarget: %s",
+                json_encode($referenceSnapshot['scanner-config'], JSON_PRETTY_PRINT),
+                json_encode($targetSnapshot['scanner-config'], JSON_PRETTY_PRINT)
+            ));
+            if (strtolower(trim($logIo->ask('Continue anyway?', 'n'))) != 'y') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * @param array $diffResults
      * @param string $targetBasePath
-     * @param SymfonyStyle $logIo
-     * @param SymfonyStyle $shellIo
+     * @param SymfonyStyle $io
      * @param array $options
      * @return int
      */
     public function applyMirroring(
         array $diffResults,
         string $targetBasePath,
-        SymfonyStyle $logIo,
-        SymfonyStyle $shellIo,
-        int $dirMode,
-        bool $shellMode,
-        bool $dryRun
-    ) {
+        SymfonyStyle $io,
+        FileMoverInterface $fileMover
+    ): int {
         $movedFilesCnt = 0;
 
         if (empty($diffResults)) {
-            $logIo->note('No syncable files found.');
+            $io->note('No syncable files found.');
         } else {
+            $pb = new ProgressBar($io, 0, 0.5);
+            $pb->setFormat("%current%/%max% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s%\n %message%");
+            $pb->setMessage('Starting...');
+            $pb->setMaxSteps(count($diffResults));
+            $pb->start();
+
             foreach ($diffResults as $match) {
                 $targetFileCurrentPath = $targetBasePath . DIRECTORY_SEPARATOR . $match['target']['path'];
                 $targetFileNewPath = $targetBasePath . DIRECTORY_SEPARATOR . $match['reference']['path'];
 
-                if ($shellMode) {
-                    if ($this->moveFileShell($targetFileCurrentPath, $targetFileNewPath, $match, $shellIo)) {
-                        $movedFilesCnt++;
-                    }
-                } else {
-                    if ($this->moveFileNative(
-                        $targetFileCurrentPath,
-                        $targetFileNewPath,
-                        $match,
-                        $logIo,
-                        $dirMode,
-                        $dryRun
-                    )) {
-                        $movedFilesCnt++;
-                    }
+                $pb->setMessage($targetFileCurrentPath);
+                $pb->advance();
+
+                if ($fileMover->moveFile($targetFileCurrentPath, $targetFileNewPath, $match)) {
+                    $movedFilesCnt++;
                 }
             }
+
+            $pb->setMessage('Finished.');
+            $pb->finish();
+            $io->newLine();
         }
 
         return $movedFilesCnt;
     }
 
     /**
-     * @param string $targetFileCurrentPath
-     * @param string $targetFileNewPath
-     * @param array $match
-     * @param InputInterface $input
-     * @param SymfonyStyle $io
-     * @return bool
+     * @param array $options
+     * @param OutputInterface $io
+     * @param OutputInterface $errIo
+     * @return FileMoverInterface
      */
-    protected function moveFileShell(
-        string $targetFileCurrentPath,
-        string $targetFileNewPath,
-        array $match,
-        SymfonyStyle $io
-    ) {
-        if ($io->isVerbose()) {
-            $io->writeln(sprintf(
-                '# %s => %s',
-                $targetFileCurrentPath,
-                $targetFileNewPath
-            ));
-        }
-        if ($io->isVeryVerbose()) {
-            $io->writeln(
-                sprintf(
-                    '# FILE                  %s | Size: %s | Time: %s | Checksum: %s',
-                    $match['target']['path'],
-                    $match['target']['size'] ?? '(unknown)',
-                    $match['target']['mtime'] ?? '(unknown)',
-                    $match['target']['checksum-summary'] ?? '(unknown)'
-                )
-            );
-            $io->writeln(
-                sprintf(
-                    '# MATCHES FROM SNAPSHOT %s | Size: %s | Time: %s | Checksum: %s',
-                    $match['reference']['path'],
-                    $match['reference']['size'] ?? '(unknown)',
-                    $match['reference']['mtime'] ?? '(unknown)',
-                    $match['reference']['checksum-summary'] ?? '(unknown)'
-                )
-            );
+    protected function createFileMover(
+        array $options,
+        OutputInterface $io,
+        OutputInterface $errIo
+    ): FileMoverInterface {
+        if ($options['shell-mode']) {
+            return new Shell($io, $options['dir-mode']);
         }
 
-        if ($match['target']['path'] == $match['reference']['path']) {
-            if ($io->isVerbose()) {
-                $io->writeln('# INFO: Already at the expected location.');
-            }
-        } else {
-            if ($io->isVerbose()) {
-                if (file_exists($targetFileNewPath)) {
-                    $io->writeln(
-                        '# WARNING: A different file already exists at that location, skipping.'
-                    );
-
-                    return false;
-                }
-            }
-
-            if (!is_dir($parentDir = dirname($targetFileNewPath))) {
-                $io->writeln(sprintf(
-                    'mkdir -p %s ;',
-                    escapeshellarg($parentDir)
-                ));
-            }
-
-            $io->writeln(sprintf(
-                'mv %s %s ;',
-                escapeshellarg($targetFileCurrentPath),
-                escapeshellarg($targetFileNewPath)
-            ));
-        }
-
-        return false;   // This method does not really *move* files so always return FALSE
-    }
-
-    /**
-     * @param string $targetFileCurrentPath
-     * @param string $targetFileNewPath
-     * @param array $match
-     * @param SymfonyStyle $io
-     * @param int $dirMode
-     * @param bool $dryRun
-     * @return bool
-     */
-    protected function moveFileNative(
-        string $targetFileCurrentPath,
-        string $targetFileNewPath,
-        array $match,
-        SymfonyStyle $io,
-        int $dirMode,
-        bool $dryRun
-    ) {
-        if ($io->isVerbose()) {
-            $io->writeln(sprintf('🗋 %s => %s', $match['target']['path'], $match['reference']['path']));
-        }
-        if ($io->isVeryVerbose()) {
-            $io->writeln(
-                sprintf(
-                    '* FILE                  %s | Size: %s | Time: %s | Checksum: %s',
-                    $match['target']['path'],
-                    $match['target']['size'] ?? '(unknown)',
-                    $match['target']['mtime'] ?? '(unknown)',
-                    $match['target']['checksum-summary'] ?? '(unknown)'
-                )
-            );
-            $io->writeln(
-                sprintf(
-                    '  MATCHES FROM SNAPSHOT %s | Size: %s | Time: %s | Checksum: %s',
-                    $match['reference']['path'],
-                    $match['reference']['size'] ?? '(unknown)',
-                    $match['reference']['mtime'] ?? '(unknown)',
-                    $match['reference']['checksum-summary'] ?? '(unknown)'
-                )
-            );
-        }
-
-        if ($match['target']['path'] == $match['reference']['path']) {
-            if ($io->isVerbose()) {
-                $io->writeln('  <info>✔ Already at the expected location.</info>');
-            }
-        } else {
-            if (file_exists($targetFileNewPath)) {
-                $io->warning(sprintf(
-                    'Cannot move file %s: a file already exists at %s, skipping.',
-                    $targetFileCurrentPath,
-                    $targetFileNewPath
-                ));
-
-                return false;
-            }
-
-            $question = sprintf(
-                "❓ Move file from %s\n" .
-                "               to <fg=magenta>%s</>?",
-                $targetFileCurrentPath,
-                $targetFileNewPath
-            );
-            if (strtolower(trim($io->ask($question, 'y'))) != 'y') {
-                $io->writeln('<fg=blue>🖮 Skipped.</>');
-
-                return false;
-            }
-
-            if ($dryRun) {
-                $io->writeln('<fg=blue>✋ Dry-run enabled, keeping file in place.</>');
-            } else {
-                if (!is_dir($parentDir = dirname($targetFileNewPath))) {
-                    if (!mkdir($parentDir, $dirMode, true)) {
-                        $io->error(sprintf('Could not create directory %s.', $parentDir));
-
-                        return false;
-                    }
-                }
-                if (@rename($targetFileCurrentPath, $targetFileNewPath)) {
-                    $io->writeln(sprintf('<info>✔ File %s moved successfully.</info>', $targetFileCurrentPath));
-
-                    return true;
-                } else {
-                    $io->error(sprintf(
-                        'Could not move file from %s to %s.',
-                        $targetFileCurrentPath,
-                        $targetFileNewPath
-                    ));
-
-                    return false;
-                }
-            }
-        }
-
-        return false;
+        return new Native($errIo, $options['dir-mode'], $options['dry-run']);
     }
 
     /**
@@ -479,7 +387,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
      * @param array $scannerConfig
      * @return string
      */
-    protected function getTargetSnapshotCacheFilename(string $path, array $scannerConfig) {
+    protected function getTargetSnapshotCacheFilename(string $path, array $scannerConfig): string {
         $hash = sha1(json_encode([
             'path' => $path,
             'scanner-config' => $scannerConfig

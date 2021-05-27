@@ -207,17 +207,21 @@ class Mirror
         $referenceIndex = [];
         foreach ($reference['files'] as $fileData) {
             $file = File::fromArray($fileData);
+            $fileKey = spl_object_hash($file);
 
             if ($scannerConfig['use-size']) {
-                $referenceIndex['by-size'][$file->getSize()][] = $file;
+                $referenceIndex['by-size'][$file->getSize()][$fileKey] = $file;
             }
             if ($scannerConfig['use-mtime']) {
-                $referenceIndex['by-mtime'][$file->getMtime()][] = $file;
+                $referenceIndex['by-mtime'][$file->getMtime()][$fileKey] = $file;
             }
             if ($scannerConfig['use-checksum']) {
                 foreach ($file->getChecksums() as $checksum) {
-                    $referenceIndex['by-checksum'][$checksum['start']][] = $file;
+                    $referenceIndex['by-checksum'][$this->getChecksumKey($checksum)][$fileKey] = $file;
                 }
+            }
+            if ($scannerConfig['use-filename']) {
+                $referenceIndex['by-filename'][basename($file->getPath())][$fileKey] = $file;
             }
         }
 
@@ -243,15 +247,15 @@ class Mirror
                 }
                 if ($scannerConfig['use-checksum']) {
                     foreach ($file->getChecksums() as $checksum) {
-                        $lookupArrays[] = $referenceIndex['by-checksum'][$checksum['start']] ?? [];
+                        $lookupArrays[] = $referenceIndex['by-checksum'][$this->getChecksumKey($checksum)] ?? [];
                     }
+                }
+                if ($scannerConfig['use-filename']) {
+                    $lookupArrays[] = $referenceIndex['by-filename'][basename($file->getPath())] ?? [];
                 }
 
                 /** @var File[] $matchingFiles */
-                $uintersectArgs = array_merge($lookupArrays, [function($a, $b) {
-                    return strcmp(spl_object_hash($a), spl_object_hash($b));
-                }]);
-                $matchingFiles = call_user_func_array('array_uintersect', $uintersectArgs);
+                $matchingFiles = array_intersect_key(...$lookupArrays);
 
                 if (count($matchingFiles) > 1) {
                     $messages = [
@@ -308,8 +312,13 @@ class Mirror
             'use-size'             => $options['scanner-config']['use-size']             ?? true,
             'use-mtime'            => $options['scanner-config']['use-mtime']            ?? true,
             'use-checksum'         => $options['scanner-config']['use-checksum']         ?? true,
+            'use-filename'         => $options['scanner-config']['use-size']             ?? false,
             'beginning-chunk-size' => $options['scanner-config']['beginning-chunk-size'] ?? self::CHECKSUM_DEFAULT_CHUNK_SIZE,
             'beginning-chunk-algo' => $options['scanner-config']['beginning-chunk-algo'] ?? self::CHECKSUM_DEFAULT_ALGO,
         ];
+    }
+
+    protected function getChecksumKey(array $checksumData) {
+        return "{$checksumData['start']}-{$checksumData['actual-length']}-{$checksumData['value']}";
     }
 }
