@@ -312,7 +312,7 @@ class Mirror
             'use-size'             => $options['scanner-config']['use-size']             ?? true,
             'use-mtime'            => $options['scanner-config']['use-mtime']            ?? true,
             'use-checksum'         => $options['scanner-config']['use-checksum']         ?? true,
-            'use-filename'         => $options['scanner-config']['use-size']             ?? false,
+            'use-filename'         => $options['scanner-config']['use-filename']         ?? false,
             'beginning-chunk-size' => $options['scanner-config']['beginning-chunk-size'] ?? self::CHECKSUM_DEFAULT_CHUNK_SIZE,
             'beginning-chunk-algo' => $options['scanner-config']['beginning-chunk-algo'] ?? self::CHECKSUM_DEFAULT_ALGO,
         ];
