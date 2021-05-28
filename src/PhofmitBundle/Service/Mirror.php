@@ -255,7 +255,9 @@ class Mirror
                 }
 
                 /** @var File[] $matchingFiles */
-                $matchingFiles = array_intersect_key(...$lookupArrays);
+                $matchingFiles = count($lookupArrays) > 1
+                    ? array_intersect_key(...$lookupArrays)
+                    : current($lookupArrays);
 
                 if (count($matchingFiles) > 1) {
                     $messages = [
