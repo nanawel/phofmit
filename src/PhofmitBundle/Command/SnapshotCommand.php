@@ -50,7 +50,13 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
                 'include',
                 'i',
                 InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
-                'Include path patterns (strings or regexps if enclosed in slashes "/")'
+                'Include path patterns (strings, or regexps if enclosed in slashes "/")'
+            )
+            ->addOption(
+                'exclude',
+                'E',
+                InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
+                'Exclude path patterns (strings, or regexps if enclosed in slashes "/")'
             )
             ->addArgument(
                 'path',
@@ -128,6 +134,11 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
         if ($includes = $input->getOption('include')) {
             foreach ($includes as $include) {
                 $options['scanner-config']['include'][] = $include;
+            }
+        }
+        if ($excludes = $input->getOption('exclude')) {
+            foreach ($excludes as $exclude) {
+                $options['scanner-config']['exclude'][] = $exclude;
             }
         }
 

@@ -52,7 +52,7 @@ class Mirror
 
         $files = [];
         if (!$splFiles) {
-            $io->warning('No file found in specified target folder with given include patterns (if any).');
+            $io->warning('No file found in specified target folder with given include/exclude patterns (if any).');
         } else {
             $pb->setMaxSteps(count($splFiles));
             $pb->setFormat("%current:-4s%/%max:-4s% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s%\n %message%");
@@ -122,6 +122,17 @@ class Mirror
                 $finder->path($include);
                 if ($io->isVerbose()) {
                     $io->writeln(sprintf('<info>🛈 included path pattern: "%s".</info>', $include));
+                }
+            }
+        }
+        if ($scannerConfig['exclude'] ?? false) {
+            if (!is_array($scannerConfig['exclude'])) {
+                throw new \InvalidArgumentException('"exclude" option must be an array of strings.');
+            }
+            foreach ($scannerConfig['exclude'] as $exclude) {
+                $finder->notPath($exclude);
+                if ($io->isVerbose()) {
+                    $io->writeln(sprintf('<info>🛈 excluded path pattern: "%s".</info>', $exclude));
                 }
             }
         }
@@ -311,6 +322,7 @@ class Mirror
     public function getScannerConfig(array $options = []) {
         return [
             'include'              => $options['scanner-config']['include']              ?? [],
+            'exclude'              => $options['scanner-config']['exclude']              ?? [],
             'use-size'             => $options['scanner-config']['use-size']             ?? true,
             'use-mtime'            => $options['scanner-config']['use-mtime']            ?? true,
             'use-checksum'         => $options['scanner-config']['use-checksum']         ?? true,
