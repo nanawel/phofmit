@@ -96,6 +96,11 @@ class Mirror
         $finder->files()
             ->in($path);
 
+        if ($options['ignore-hidden'] ?? false) {
+            $finder->ignoreDotFiles(true);
+        } else {
+            $finder->ignoreDotFiles(false);
+        }
         if ($options['ignore-unreadable'] ?? true) {
             $finder->ignoreUnreadableDirs();
             if ($io->isVerbose()) {

@@ -271,6 +271,11 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         }
 
         foreach ($input->getOption('option') as $option) {
+            if ((str_starts_with($option, 'use-') || str_starts_with($option, 'ignore-'))
+                && !str_contains($option, '=')
+            ) {
+                $option = "$option=1";
+            }
             list($key, $value) = explode('=', $option);
             $options['scanner-config'][$key] = $value;
         }
