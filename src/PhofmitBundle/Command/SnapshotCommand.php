@@ -4,6 +4,7 @@ namespace App\PhofmitBundle\Command;
 use App\PhofmitBundle\Helper\DateTime;
 use App\PhofmitBundle\Helper\FileChecksum;
 use App\PhofmitBundle\Service\Mirror;
+use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -13,6 +14,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 class SnapshotCommand extends \Symfony\Component\Console\Command\Command
 {
+    public const TERMINAL_DEFAULT_WIDTH = 120;
+
     /** @var Mirror */
     protected $mirrorService;
 
@@ -79,7 +82,14 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
             $input->getOption('snapshot-filename'),
             [
                 '{hostname}' => gethostname(),
-                '{path}' => trim(preg_replace(['#/#', '#[\W]+#'], ['__', '-'], $path), '-'),
+                '{path}' => trim(
+                    preg_replace(
+                        ['#/#', '#[\W]+#'],
+                        ['__', '-'],
+                        trim($path, '/')
+                    ),
+                    '-'
+                ),
                 '{now}' => date('Y-m-d_H-i-s')
             ]
         );
@@ -93,17 +103,28 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
         $snapshot = $this->mirrorService->snapshot($path, $io, $options);
 
         if ($snapshot['files'] && $io->isVerbose()) {
-            $io->table(
-                ['path', 'size', 'mtime', 'checksums'],
-                array_map(function($fileData) {
-                    return [
-                        'path' => $fileData['path'],
-                        'size' => $fileData['size'] ?? '(unknown)',
-                        'mtime' => $fileData['mtime'] ?? '(unknown)',
-                        'checksums' => $this->fileChecksumHelper->getPrintableSummary($fileData['checksums']),
-                    ];
-                }, $snapshot['files'])
-            );
+            $table = new Table($io);
+            $table->setHeaders(['path', 'size', 'mtime', 'checksums']);
+            $colsMaxWidth = [];
+            $table->setRows(array_map(function($fileData) use (&$colsMaxWidth) {
+                $return = [
+                    'path' => $fileData['path'],
+                    'size' => $fileData['size'] ?? '(unknown)',
+                    'mtime' => $fileData['mtime'] ?? '(unknown)',
+                    'checksums' => $this->fileChecksumHelper->getPrintableSummary($fileData['checksums']),
+                ];
+                foreach ($return as $col => $v) {
+                    $colsMaxWidth[$col] = max($colsMaxWidth[$col] ?? 0, strlen($v) + 2);
+                }
+
+                return $return;
+            }, $snapshot['files']));
+            $widthLeft = (getenv('COLUMNS') ?: self::TERMINAL_DEFAULT_WIDTH) - 7;
+            unset($colsMaxWidth['path']);
+            $table->setColumnMaxWidth(0, max(12, $widthLeft - array_sum($colsMaxWidth)));
+
+            $table->render();
+            $io->newLine();
         }
 
         $io->writeln("<info>✎ Writing snapshot to $snapshotFilename...</info>");
