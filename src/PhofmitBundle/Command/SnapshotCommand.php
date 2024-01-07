@@ -114,7 +114,7 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
                     'checksums' => $this->fileChecksumHelper->getPrintableSummary($fileData['checksums']),
                 ];
                 foreach ($return as $col => $v) {
-                    $colsMaxWidth[$col] = max($colsMaxWidth[$col] ?? 0, strlen($v) + 2);
+                    $colsMaxWidth[$col] = max($colsMaxWidth[$col] ?? 0, mb_strlen($v) + 2);
                 }
 
                 return $return;
