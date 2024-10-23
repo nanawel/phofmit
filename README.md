@@ -28,7 +28,7 @@ options on:
 
 ## Requirements
 
-- PHP 7.2+ or Docker
+- PHP 8.1+ or Docker
 
 ## Usage (local)
 
@@ -42,7 +42,7 @@ bin/console phofmit:mirror ...
 
 ## Usage (from Docker)
 
-> Using [`thecodingmachine/php:7.3-v3-cli`](https://github.com/thecodingmachine/docker-images-php)
+> Using [`thecodingmachine/php:8.2-v4-cli`](https://github.com/thecodingmachine/docker-images-php)
 > as base image, if PHP is not available on local host.
 
 Here to mount `/my/reference/folder` and `/my/target/folder` and be able to
@@ -54,7 +54,7 @@ docker run -it --rm \
     -v /tmp:/mnt/tmp \
     -v /my/reference/folder:/mnt/reference \
     -v /my/target/folder:/mnt/target \
-    thecodingmachine/php:7.3-v3-cli \
+    thecodingmachine/php:8.2-v4-cli \
     /bin/bash
 
 composer install
