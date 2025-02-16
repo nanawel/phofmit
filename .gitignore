@@ -11,3 +11,7 @@
 .idea
 *.phofmit.json
 *.phofmit.json.gz
+
+###> phpstan/phpstan ###
+phpstan.neon
+###< phpstan/phpstan ###

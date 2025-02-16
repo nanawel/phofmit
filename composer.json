@@ -24,6 +24,7 @@
         "symfony/yaml": "6.*"
     },
     "require-dev": {
+        "rector/rector": "^2.0"
     },
     "config": {
         "platform": {
