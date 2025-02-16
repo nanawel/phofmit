@@ -5,7 +5,6 @@ use App\PhofmitBundle\Helper\DateTime;
 use App\PhofmitBundle\Service\FileMover\FileMoverInterface;
 use App\PhofmitBundle\Service\FileMover\Native;
 use App\PhofmitBundle\Service\FileMover\Shell;
-use App\PhofmitBundle\Service\Mirror;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -18,14 +17,10 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 {
     const CANCELED = 2;
 
-    /** @var Mirror */
-    protected $mirrorService;
-
     public function __construct(
-        Mirror $mirrorService,
+        protected \App\PhofmitBundle\Service\Mirror $mirrorService,
         string $name = null
     ) {
-        $this->mirrorService = $mirrorService;
         parent::__construct($name);
     }
 
@@ -84,8 +79,6 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
     }
 
     /**
-     * @param InputInterface $input
-     * @param OutputInterface $output
      * @return int
      * @throws \Exception
      */
@@ -95,7 +88,6 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         /** @var SymfonyStyle $errIo */
         $errIo = $io->getErrorStyle();
         $errIo->setDecorated(true);
-        $shellIo = $io;
 
         $errIo->title('MIRRORING');
 
@@ -105,6 +97,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 
             return self::FAILURE;
         }
+
         $referenceSnapshotFilename = realpath($referenceSnapshotFilename);
 
         $options = $this->readOptions($input);
@@ -116,7 +109,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             $errIo->note('Using shell output.');
         }
 
-        $errIo->writeln("<info>🛈 Using snapshot file at: $referenceSnapshotFilename</info>");
+        $errIo->writeln(sprintf('<info>🛈 Using snapshot file at: %s</info>', $referenceSnapshotFilename));
 
         $startTime = microtime(true);
         if ($options['dry-run']) {
@@ -132,8 +125,8 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         try {
             $referenceSnapshot = $this->loadSnapshot($referenceSnapshotFilename);
         }
-        catch (\Throwable $e) {
-            $errIo->error($e->getMessage());
+        catch (\Throwable $throwable) {
+            $errIo->error($throwable->getMessage());
 
             return self::FAILURE;
         }
@@ -147,7 +140,8 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                     'The base path from snapshot does not exist: ' . $targetSnapshot['base-path']
                 );
             }
-            $errIo->writeln("<info>🛈 Target folder is at: {$targetSnapshot['base-path']}</info>");
+
+            $errIo->writeln(sprintf('<info>🛈 Target folder is at: %s</info>', $targetSnapshot['base-path']));
 
             $errIo->writeln(sprintf(
                 '<info>🛈 %d file(s) found in target snapshot.</info>',
@@ -157,10 +151,12 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
             if (!$path = $input->getArgument('path')) {
                 throw new \InvalidArgumentException('You must specify a path if no --target-snapshot is given.');
             }
+
             if (!is_dir($path)) {
                 throw new \InvalidArgumentException('Invalid path: ' . $path);
             }
-            $errIo->writeln("<info>🛈 Target folder is at: $path</info>");
+
+            $errIo->writeln(sprintf('<info>🛈 Target folder is at: %s</info>', $path));
 
             $targetSnapshotCacheFilename = $this->getTargetSnapshotCacheFilename(
                 $path,
@@ -177,10 +173,10 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                         . 'Do you want to use it instead of scanning the folder again?',
                         $targetSnapshot['date']
                     );
-                    if (strtolower(trim($io->ask($question, 'n'))) == 'y') {
+                    if (strtolower(trim((string) $io->ask($question, 'n'))) === 'y') {
                         $runSnapshot = false;
                     }
-                } catch (\Throwable $e) {
+                } catch (\Throwable) {
                     // just ignore
                 }
             }
@@ -194,6 +190,10 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
                 // Save result in cache file to speed up next execution if any
                 @file_put_contents($targetSnapshotCacheFilename, json_encode($targetSnapshot, JSON_PRETTY_PRINT));
             }
+        }
+
+        if (!isset($targetSnapshot)) {
+            throw new \RuntimeException('Could not load target snapshot!');
         }
 
         $diffScannerConfig = $this->mirrorService->getScannerConfig($options);
@@ -234,7 +234,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 
         $errIo->success(sprintf(
             "✔ Finished in %s. %d file(s) have been moved%s.",
-            DateTime::secondsToTime(microtime(true) - $startTime),
+            DateTime::secondsToTime((int) (microtime(true) - $startTime)),
             $movedFilesCnt,
             $options['dry-run']
                 ? ' (dry-run mode enabled)'
@@ -247,10 +247,6 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         return self::SUCCESS;
     }
 
-    /**
-     * @param InputInterface $input
-     * @return array
-     */
     protected function readOptions(InputInterface $input): array {
         $options = [
             'dry-run'    => $input->getOption('dry-run'),
@@ -262,21 +258,22 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 
         // Try to handle wrong octal representation if possible
         $dirMode = $options['dir-mode'];
-        if (strlen($dirMode) === 3) {
-            $options['dir-mode'] = sscanf("0$dirMode", '%o')[0];
-        } elseif (strlen($dirMode) === 4) {
-            $options['dir-mode'] = sscanf("$dirMode", '%o')[0];
+        if (strlen((string) $dirMode) === 3) {
+            $options['dir-mode'] = sscanf('0' . $dirMode, '%o')[0];
+        } elseif (strlen((string) $dirMode) === 4) {
+            $options['dir-mode'] = sscanf($dirMode, '%o')[0];
         } else {
             throw new \InvalidArgumentException('Invalid directory mode: ' . $options['dir-mode']);
         }
 
         foreach ($input->getOption('option') as $option) {
-            if ((str_starts_with($option, 'use-') || str_starts_with($option, 'ignore-'))
-                && !str_contains($option, '=')
+            if ((str_starts_with((string) $option, 'use-') || str_starts_with((string) $option, 'ignore-'))
+                && !str_contains((string) $option, '=')
             ) {
-                $option = "$option=1";
+                $option .= '=1';
             }
-            list($key, $value) = explode('=', $option);
+
+            [$key, $value] = explode('=', (string) $option);
             $options['scanner-config'][$key] = $value;
         }
 
@@ -285,23 +282,16 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
 
     /**
      * @param $filename
-     * @return array
      * @throws \Exception
      */
     protected function loadSnapshot(string $filename): array {
         if (!is_file($filename) || !is_readable($filename)) {
-            throw new \Exception("$filename does not exist or is not readable.");
+            throw new \Exception($filename . ' does not exist or is not readable.');
         }
 
         return json_decode(file_get_contents($filename), true);
     }
 
-    /**
-     * @param array $referenceSnapshot
-     * @param array $targetSnapshot
-     * @param SymfonyStyle $logIo
-     * @return bool
-     */
     protected function validateSnapshots(
         array $referenceSnapshot,
         array $targetSnapshot,
@@ -310,14 +300,14 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         ksort($referenceSnapshot['scanner-config']);
         ksort($targetSnapshot['scanner-config']);
 
-        if ($referenceSnapshot['scanner-config'] != $targetSnapshot['scanner-config']) {
+        if ($referenceSnapshot['scanner-config'] !== $targetSnapshot['scanner-config']) {
             $logIo->warning(sprintf(
                 "Reference and target snapshots scanner configurations differ.\n"
                 . "Reference: %s\nTarget: %s",
                 json_encode($referenceSnapshot['scanner-config'], JSON_PRETTY_PRINT),
                 json_encode($targetSnapshot['scanner-config'], JSON_PRETTY_PRINT)
             ));
-            if (strtolower(trim($logIo->ask('Continue anyway?', 'n'))) != 'y') {
+            if (strtolower(trim((string) $logIo->ask('Continue anyway?', 'n'))) !== 'y') {
                 return false;
             }
         }
@@ -325,13 +315,6 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         return true;
     }
 
-    /**
-     * @param array $diffResults
-     * @param string $targetBasePath
-     * @param SymfonyStyle $io
-     * @param array $options
-     * @return int
-     */
     public function applyMirroring(
         array $diffResults,
         string $targetBasePath,
@@ -340,7 +323,7 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
     ): int {
         $movedFilesCnt = 0;
 
-        if (empty($diffResults)) {
+        if ($diffResults === []) {
             $io->note('No syncable files found.');
         } else {
             $pb = new ProgressBar($io, 0, 0.5);
@@ -369,16 +352,10 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         return $movedFilesCnt;
     }
 
-    /**
-     * @param array $options
-     * @param OutputInterface $io
-     * @param OutputInterface $errIo
-     * @return FileMoverInterface
-     */
     protected function createFileMover(
         array $options,
         OutputInterface $io,
-        OutputInterface $errIo
+        SymfonyStyle $errIo
     ): FileMoverInterface {
         if ($options['shell-mode']) {
             return new Shell($io, $options['dir-mode']);
@@ -387,11 +364,6 @@ class MirrorCommand extends \Symfony\Component\Console\Command\Command
         return new Native($errIo, $options['dir-mode'], $options['dry-run']);
     }
 
-    /**
-     * @param string $path
-     * @param array $scannerConfig
-     * @return string
-     */
     protected function getTargetSnapshotCacheFilename(string $path, array $scannerConfig): string {
         $hash = sha1(json_encode([
             'path' => $path,

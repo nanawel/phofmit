@@ -3,27 +3,15 @@
 namespace App\PhofmitBundle\Service\FileMover;
 
 
-use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
 
 class Native implements FileMoverInterface
 {
-    /** @var OutputInterface */
-    protected $io;
-
-    /** @var int */
-    protected $dirMode;
-
-    /** @var bool */
-    protected $dryRun;
-
     public function __construct(
-        OutputInterface $io,
-        int $dirMode = 0775,
-        bool $dryRun = false
+        protected SymfonyStyle $io,
+        protected int $dirMode = 0775,
+        protected bool $dryRun = false
     ) {
-        $this->io = $io;
-        $this->dirMode = $dirMode;
-        $this->dryRun = $dryRun;
     }
 
     /**
@@ -37,6 +25,7 @@ class Native implements FileMoverInterface
         if ($this->io->isVerbose()) {
             $this->io->writeln(sprintf('🗋 %s => %s', $match['target']['path'], $match['reference']['path']));
         }
+
         if ($this->io->isVeryVerbose()) {
             $this->io->writeln(
                 sprintf(
@@ -79,7 +68,7 @@ class Native implements FileMoverInterface
                 $targetFileCurrentPath,
                 $targetFileNewPath
             );
-            if (strtolower(trim($this->io->ask($question, 'y'))) != 'y') {
+            if (strtolower(trim((string) $this->io->ask($question, 'y'))) !== 'y') {
                 $this->io->writeln('<fg=blue>🖮 Skipped.</>');
 
                 return false;
@@ -88,13 +77,11 @@ class Native implements FileMoverInterface
             if ($this->dryRun) {
                 $this->io->writeln('<fg=blue>✋ Dry-run enabled, keeping file in place.</>');
             } else {
-                if (!is_dir($parentDir = dirname($targetFileNewPath))) {
-                    if (!mkdir($parentDir, $this->dirMode, true)) {
-                        $this->io->error(sprintf('Could not create directory %s.', $parentDir));
-
-                        return false;
-                    }
+                if (!is_dir($parentDir = dirname($targetFileNewPath)) && !mkdir($parentDir, $this->dirMode, true)) {
+                    $this->io->error(sprintf('Could not create directory %s.', $parentDir));
+                    return false;
                 }
+
                 if (@rename($targetFileCurrentPath, $targetFileNewPath)) {
                     $this->io->writeln(sprintf('<info>✔ File %s moved successfully.</info>', $targetFileCurrentPath));
 

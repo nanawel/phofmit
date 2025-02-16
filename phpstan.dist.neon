@@ -3,5 +3,6 @@ parameters:
     paths:
         - bin/
         - config/
-        - public/
         - src/
+    ignoreErrors:
+        - identifier: missingType.iterableValue

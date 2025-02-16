@@ -3,7 +3,6 @@
 namespace App\PhofmitBundle\Service;
 
 
-use App\PhofmitBundle\Helper\FileChecksum;
 use App\PhofmitBundle\Model\File;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -13,23 +12,16 @@ use Symfony\Component\Finder\SplFileInfo;
 class Mirror
 {
     const VERSION                     = '1.0';
+
     const CHECKSUM_DEFAULT_CHUNK_SIZE = 512 * 1024;
+
     const CHECKSUM_DEFAULT_ALGO       = 'sha1';
 
-    /** @var \App\PhofmitBundle\Helper\FileChecksum */
-    protected $fileChecksumHelper;
-
     public function __construct(
-        FileChecksum $fileChecksumHelper
+        protected \App\PhofmitBundle\Helper\FileChecksum $fileChecksumHelper
     ) {
-        $this->fileChecksumHelper = $fileChecksumHelper;
     }
 
-    /**
-     * @param string $path
-     * @param array $options
-     * @return array
-     */
     public function snapshot(
         string $path,
         SymfonyStyle $io,
@@ -45,27 +37,29 @@ class Mirror
 
         $splFiles = [];
         foreach ($finder as $splFile) {
-            $pb->setMessage("🖹 {$splFile->getRelativePathname()}");
+            $pb->setMessage('🖹 ' . $splFile->getRelativePathname());
             $splFiles[] = $splFile;
             $pb->advance();
         }
 
         $files = [];
-        if (!$splFiles) {
+        if ($splFiles === []) {
             $io->warning('No file found in specified target folder with given include/exclude patterns (if any).');
         } else {
             $pb->setMaxSteps(count($splFiles));
             $pb->setFormat("%current:-4s%/%max:-4s% [%bar%] %elapsed:6s%/%estimated:-6s% %memory:6s%\n %message%");
             $pb->start();
             foreach ($splFiles as $splFile) {
-                $pb->setMessage("🔬 {$splFile->getRelativePathname()}");
+                $pb->setMessage('🔬 ' . $splFile->getRelativePathname());
                 try {
                     $files[] = $this->scanFile($splFile, $scannerConfig)->toArray();
                 } catch (\Throwable $e) {
-                    $io->warning("{$splFile->getRelativePathname()}: {$e->getMessage()}");
+                    $io->warning(sprintf('%s: %s', $splFile->getRelativePathname(), $e->getMessage()));
                 }
+
                 $pb->advance();
             }
+
             $pb->finish();
             $io->newLine();
 
@@ -82,16 +76,12 @@ class Mirror
         ];
     }
 
-    /**
-     * @param array $options
-     * @return Finder
-     */
     protected function buildFinder(
         string $path,
         array $options,
         array $scannerConfig,
         SymfonyStyle $io
-    ) {
+    ): \Symfony\Component\Finder\Finder {
         $finder = new Finder();
         $finder->files()
             ->in($path);
@@ -101,28 +91,33 @@ class Mirror
         } else {
             $finder->ignoreDotFiles(false);
         }
+
         if ($options['ignore-unreadable'] ?? true) {
             $finder->ignoreUnreadableDirs();
             if ($io->isVerbose()) {
                 $io->writeln('<info>🛈 ignore-unreadable option enabled.</info>');
             }
         }
+
         if ($options['follow-links'] ?? true) {
             $finder->followLinks();
             if ($io->isVerbose()) {
                 $io->writeln('<info>🛈 follow-links option enabled.</info>');
             }
         }
+
         if ($options['depth'] ?? false) {
             $finder->depth($options['depth']);
             if ($io->isVerbose()) {
                 $io->writeln(sprintf('<info>🛈 depth option set to "%s".</info>', $options['depth']));
             }
         }
+
         if ($scannerConfig['include'] ?? false) {
             if (!is_array($scannerConfig['include'])) {
                 throw new \InvalidArgumentException('"include" option must be an array of strings.');
             }
+
             foreach ($scannerConfig['include'] as $include) {
                 $finder->path($include);
                 if ($io->isVerbose()) {
@@ -130,10 +125,12 @@ class Mirror
                 }
             }
         }
+
         if ($scannerConfig['exclude'] ?? false) {
             if (!is_array($scannerConfig['exclude'])) {
                 throw new \InvalidArgumentException('"exclude" option must be an array of strings.');
             }
+
             foreach ($scannerConfig['exclude'] as $exclude) {
                 $finder->notPath($exclude);
                 if ($io->isVerbose()) {
@@ -146,9 +143,6 @@ class Mirror
     }
 
     /**
-     * @param SplFileInfo $fileInfo
-     * @param array $scannerConfig
-     * @return File
      * @throws \Error
      */
     protected function scanFile(
@@ -162,9 +156,11 @@ class Mirror
         if ($scannerConfig['use-size']) {
             $file->setSize($fileInfo->getSize());
         }
+
         if ($scannerConfig['use-mtime']) {
             $file->setMtime($fileInfo->getMTime());
         }
+
         if ($scannerConfig['use-checksum']) {
             $file->setChecksums($this->extractChecksums($fileInfo, $scannerConfig));
         }
@@ -172,15 +168,10 @@ class Mirror
         return $file;
     }
 
-    /**
-     * @param SplFileInfo $fileInfo
-     * @param array $scannerConfig
-     * @return array
-     */
     protected function extractChecksums(
         SplFileInfo $fileInfo,
         array $scannerConfig
-    ) {
+    ): array {
         $checksums = [];
 
         $chunkSize = min($fileInfo->getSize(), $scannerConfig['beginning-chunk-size']);
@@ -198,7 +189,7 @@ class Mirror
             'length'        => $scannerConfig['beginning-chunk-size'],
             'actual-length' => $chunkSize,
             'algo'          => $scannerConfig['beginning-chunk-algo'],
-            'value'         => hash($scannerConfig['beginning-chunk-algo'], $data)
+            'value'         => hash((string) $scannerConfig['beginning-chunk-algo'], $data)
         ];
 
         // There might be another checksum section at the end of the file in the future
@@ -206,18 +197,12 @@ class Mirror
         return $checksums;
     }
 
-    /**
-     * @param array $reference
-     * @param array $target
-     * @param array $scannerConfig
-     * @return array
-     */
     public function diffSnapshots(
         array $reference,
         array $target,
         array $scannerConfig,
         SymfonyStyle $io
-    ) {
+    ): array {
         $matches = [];
 
         $referenceIndex = [];
@@ -228,14 +213,17 @@ class Mirror
             if ($scannerConfig['use-size']) {
                 $referenceIndex['by-size'][$file->getSize()][$fileKey] = $file;
             }
+
             if ($scannerConfig['use-mtime']) {
                 $referenceIndex['by-mtime'][$file->getMtime()][$fileKey] = $file;
             }
+
             if ($scannerConfig['use-checksum']) {
                 foreach ($file->getChecksums() as $checksum) {
                     $referenceIndex['by-checksum'][$this->getChecksumKey($checksum)][$fileKey] = $file;
                 }
             }
+
             if ($scannerConfig['use-filename']) {
                 $referenceIndex['by-filename'][basename($file->getPath())][$fileKey] = $file;
             }
@@ -258,14 +246,17 @@ class Mirror
                 if ($scannerConfig['use-size']) {
                     $lookupArrays[] = $referenceIndex['by-size'][$file->getSize()] ?? [];
                 }
+
                 if ($scannerConfig['use-mtime']) {
                     $lookupArrays[] = $referenceIndex['by-mtime'][$file->getMtime()] ?? [];
                 }
+
                 if ($scannerConfig['use-checksum']) {
                     foreach ($file->getChecksums() as $checksum) {
                         $lookupArrays[] = $referenceIndex['by-checksum'][$this->getChecksumKey($checksum)] ?? [];
                     }
                 }
+
                 if ($scannerConfig['use-filename']) {
                     $lookupArrays[] = $referenceIndex['by-filename'][basename($file->getPath())] ?? [];
                 }
@@ -287,6 +278,7 @@ class Mirror
                             $messages[] = sprintf(' * %s', $matchingFile->getPath());
                         }
                     }
+
                     $io->warning($messages);
                 } elseif ($matchingFiles) {
                     $referenceFile = current($matchingFiles);
@@ -310,21 +302,19 @@ class Mirror
                     ];
                 }
             } catch (\Throwable $e) {
-                $io->warning("{$file->getPath()}: {$e->getMessage()}");
+                $io->warning(sprintf('%s: %s', $file->getPath(), $e->getMessage()));
             }
         }
+
         $pb->setMessage('Finished.');
         $pb->finish();
+
         $io->newLine();
 
         return $matches;
     }
 
-    /**
-     * @param array $options
-     * @return array
-     */
-    public function getScannerConfig(array $options = []) {
+    public function getScannerConfig(array $options = []): array {
         return [
             'include'              => $options['scanner-config']['include']              ?? [],
             'exclude'              => $options['scanner-config']['exclude']              ?? [],
@@ -337,7 +327,7 @@ class Mirror
         ];
     }
 
-    protected function getChecksumKey(array $checksumData) {
-        return "{$checksumData['start']}-{$checksumData['actual-length']}-{$checksumData['value']}";
+    protected function getChecksumKey(array $checksumData): string {
+        return sprintf('%s-%s-%s', $checksumData['start'], $checksumData['actual-length'], $checksumData['value']);
     }
 }

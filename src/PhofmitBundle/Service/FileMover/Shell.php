@@ -3,25 +3,15 @@
 namespace App\PhofmitBundle\Service\FileMover;
 
 
-use Symfony\Component\Console\Output\OutputInterface;
-
 class Shell implements FileMoverInterface
 {
-    /** @var OutputInterface */
-    protected $io;
-
-    /** @var int */
-    protected $dirMode;
-
     /** @var string[] */
     protected $createdDirectories = [];
 
     public function __construct(
-        OutputInterface $io,
-        int $dirMode = 0775
+        protected \Symfony\Component\Console\Output\OutputInterface $io,
+        protected int $dirMode = 0775
     ) {
-        $this->io = $io;
-        $this->dirMode = $dirMode;
     }
 
     /**
@@ -39,6 +29,7 @@ class Shell implements FileMoverInterface
                 $targetFileNewPath
             ));
         }
+
         if ($this->io->isVeryVerbose()) {
             $this->io->writeln(
                 sprintf(
@@ -65,14 +56,11 @@ class Shell implements FileMoverInterface
                 $this->io->writeln('# INFO: Already at the expected location.');
             }
         } else {
-            if ($this->io->isVerbose()) {
-                if (file_exists($targetFileNewPath)) {
-                    $this->io->writeln(
-                        '# WARNING: A different file already exists at that location, skipping.'
-                    );
-
-                    return false;
-                }
+            if ($this->io->isVerbose() && file_exists($targetFileNewPath)) {
+                $this->io->writeln(
+                    '# WARNING: A different file already exists at that location, skipping.'
+                );
+                return false;
             }
 
             $this->createDirectoryIfMissing(dirname($targetFileNewPath));
@@ -90,7 +78,7 @@ class Shell implements FileMoverInterface
     /**
      * @param string $dir
      */
-    protected function createDirectoryIfMissing($dir) {
+    protected function createDirectoryIfMissing($dir): void {
         if (!is_dir($dir) && !isset($this->createdDirectories[$dir])) {
             $this->io->writeln(sprintf(
                 'mkdir -m %o -p %s ;',

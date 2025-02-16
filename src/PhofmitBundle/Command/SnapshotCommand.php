@@ -2,8 +2,6 @@
 namespace App\PhofmitBundle\Command;
 
 use App\PhofmitBundle\Helper\DateTime;
-use App\PhofmitBundle\Helper\FileChecksum;
-use App\PhofmitBundle\Service\Mirror;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -16,19 +14,11 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
 {
     public const TERMINAL_DEFAULT_WIDTH = 120;
 
-    /** @var Mirror */
-    protected $mirrorService;
-
-    /** @var \App\PhofmitBundle\Helper\FileChecksum */
-    protected $fileChecksumHelper;
-
     public function __construct(
-        Mirror $mirrorService,
-        FileChecksum $fileChecksumHelper,
+        protected \App\PhofmitBundle\Service\Mirror $mirrorService,
+        protected \App\PhofmitBundle\Helper\FileChecksum $fileChecksumHelper,
         string $name = null
     ) {
-        $this->mirrorService = $mirrorService;
-        $this->fileChecksumHelper = $fileChecksumHelper;
         parent::__construct($name);
     }
 
@@ -83,10 +73,10 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
             [
                 '{hostname}' => gethostname(),
                 '{path}' => trim(
-                    preg_replace(
+                    (string) preg_replace(
                         ['#/#', '#[\W]+#'],
                         ['__', '-'],
-                        trim($path, '/')
+                        trim((string) $path, '/')
                     ),
                     '-'
                 ),
@@ -96,8 +86,9 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
 
         $io->title('SNAPSHOT GENERATION');
 
-        $io->writeln("<info>🛈 Snapshot will be written to $snapshotFilename.</info>");
-        $io->writeln("⏳ Scanning folder $path...");
+        $io->writeln(sprintf('<info>🛈 Snapshot will be written to %s.</info>', $snapshotFilename));
+        $io->writeln(sprintf('⏳ Scanning folder %s...', $path));
+
         $startTime = microtime(true);
 
         $snapshot = $this->mirrorService->snapshot($path, $io, $options);
@@ -106,7 +97,7 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
             $table = new Table($io);
             $table->setHeaders(['path', 'size', 'mtime', 'checksums']);
             $colsMaxWidth = [];
-            $table->setRows(array_map(function($fileData) use (&$colsMaxWidth) {
+            $table->setRows(array_map(function($fileData) use (&$colsMaxWidth): array {
                 $return = [
                     'path' => $fileData['path'],
                     'size' => $fileData['size'] ?? '(unknown)',
@@ -127,36 +118,34 @@ class SnapshotCommand extends \Symfony\Component\Console\Command\Command
             $io->newLine();
         }
 
-        $io->writeln("<info>✎ Writing snapshot to $snapshotFilename...</info>");
+        $io->writeln(sprintf('<info>✎ Writing snapshot to %s...</info>', $snapshotFilename));
         if ($bytes = file_put_contents($snapshotFilename, json_encode($snapshot, JSON_PRETTY_PRINT))) {
             $io->writeln(sprintf('<info>✔ OK, %d byte(s) have been written.</info>', $bytes));
         } else {
-            $io->error("Could not write snapshot file at: $snapshotFilename");
+            $io->error('Could not write snapshot file at: ' . $snapshotFilename);
         }
 
         $io->success(sprintf(
             "✔ Finished in %s",
-            DateTime::secondsToTime(microtime(true) - $startTime)
+            DateTime::secondsToTime((int) (microtime(true) - $startTime))
         ));
 
         return self::SUCCESS;
     }
 
-    /**
-     * @param InputInterface $input
-     * @return array
-     */
     protected function readOptions(InputInterface $input): array {
         $options = [];
         foreach ($input->getOption('option') as $option) {
-            list($key, $value) = explode('=', $option);
+            [$key, $value] = explode('=', (string) $option);
             $options['scanner-config'][$key] = $value;
         }
+
         if ($includes = $input->getOption('include')) {
             foreach ($includes as $include) {
                 $options['scanner-config']['include'][] = $include;
             }
         }
+
         if ($excludes = $input->getOption('exclude')) {
             foreach ($excludes as $exclude) {
                 $options['scanner-config']['exclude'][] = $exclude;
